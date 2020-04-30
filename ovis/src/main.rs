@@ -1,3 +1,7 @@
+mod codegen;
+
 fn main() {
-    println!("Hello, world!");
+    let mut generator = codegen::CodeGen::new("gen.o");
+    generator.generate().unwrap();
+    generator.finish();
 }
