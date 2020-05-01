@@ -75,5 +75,5 @@ type_factor := primitive | (type)
 primitive := "I64"
 
 name := (a-z)(a-zA-Z0-9)*
-number := (0-9)+
+number := -?(0-9)+
 ```
