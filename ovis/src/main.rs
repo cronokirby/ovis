@@ -1,4 +1,5 @@
 mod codegen;
+mod lexer;
 mod parser;
 
 use std::fs;

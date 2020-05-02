@@ -43,6 +43,12 @@ Multiple arguments are possible through *currying*:
 \x -> \y -> x + y
 ```
 
+# Tokenizer
+
+The tokenizer / lexer takes the string based representation of our program, and converts
+it a sequence of tokens that's more easy to parse. The main reason we need a lexer
+is to make the parsing of whitespace much simpler.
+
 # Grammar
 
 As mentioned before, any line starting with `//` is a comment, and ignored by the parser.

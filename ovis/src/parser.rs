@@ -65,9 +65,6 @@ mod test {
     macro_rules! assert_parse {
         ($a:expr, $b:expr) => {{
             let res = parse($a);
-            if !res.is_ok() {
-                dbg!(&res);
-            }
             assert!(res.is_ok());
             assert_eq!(res.unwrap(), $b);
         }};
