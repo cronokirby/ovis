@@ -71,7 +71,8 @@ expr := lambda_expr
 lambda_expr := "\" name "->" add_expr | add_expr
 add_expr := mul_expr "+" mul_expr | mul_expr "-" mul_expr | mul_expr
 mul_expr := add_expr "*" add_expr | app_expr "/" app_expr | app_expr
-app_expr := factor factor | factor
+app_expr := unary_minus_expr unary_minus_expr | unary_minus_expr
+unary_minus_expr := "-" factor | factor
 factor := name | number | (expr)
 
 type_annotation := name ":" type
@@ -81,5 +82,5 @@ type_factor := primitive | (type)
 primitive := "I64"
 
 name := (a-z)(a-zA-Z0-9)*
-number := -?(0-9)+
+number := (0-9)+
 ```
