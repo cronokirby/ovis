@@ -19,6 +19,8 @@ use std::str::Chars;
 pub enum Token {
     /// The ":" symbol
     Colon,
+    /// The ";" symbol
+    Semicolon,
     /// The "=" symbol
     Equal,
     /// The "->" symbol
@@ -53,6 +55,14 @@ impl Token {
     pub fn get_number(&self) -> Option<i64> {
         match self {
             Token::NumberLitt(x) => Some(*x),
+            _ => None,
+        }
+    }
+
+    /// Get the name contained in this token, if possible
+    pub fn get_name(&self) -> Option<&str> {
+        match self {
+            Token::Name(s) => Some(s),
             _ => None,
         }
     }
@@ -146,6 +156,7 @@ impl<'a> Iterator for Lexer<'a> {
             ')' => Ok(RightParens),
             '=' => Ok(Equal),
             ':' => Ok(Colon),
+            ';' => Ok(Token::Semicolon),
             '+' => Ok(Plus),
             '*' => Ok(Asterisk),
             '/' => Ok(FSlash),

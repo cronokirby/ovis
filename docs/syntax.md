@@ -61,7 +61,7 @@ of what the syntax rules look like. Concerns like associativity aren't really co
 If you want to know *exactly* how the syntax is defined, it's best to read the source code.
 
 ```
-program := definition program
+program := definition (; definition)* | ""
 
 definition := expr_definition | type_annotation
 
@@ -71,8 +71,8 @@ expr := lambda_expr
 lambda_expr := "\" name "->" add_expr | add_expr
 add_expr := mul_expr "+" mul_expr | mul_expr "-" mul_expr | mul_expr
 mul_expr := add_expr "*" add_expr | app_expr "/" app_expr | app_expr
-app_expr := unary_minus_expr unary_minus_expr | unary_minus_expr
-unary_minus_expr := "-" factor | factor
+unary_minus_expr := "-" app_expr | app_expr
+app_expr := factor factor | factor
 factor := name | number | (expr)
 
 type_annotation := name ":" type
