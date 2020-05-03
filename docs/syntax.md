@@ -81,6 +81,6 @@ type := type_factor "->" type_factor | type_factor
 type_factor := primitive | (type)
 primitive := "I64"
 
-name := (a-z)(a-zA-Z0-9)*
+name := (a-z)(a-zA-Z0-9!?_)*
 number := (0-9)+
 ```

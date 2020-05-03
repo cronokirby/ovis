@@ -58,6 +58,10 @@ impl Token {
     }
 }
 
+fn can_continue_identifier(c: char) -> bool {
+    c == '_' || c == '?' || c == '!' || c.is_alphanumeric()
+}
+
 /// Represents an error that can occurr during lexing.
 ///
 /// The lexing phase will usually try to produce as many errors as possible
@@ -122,7 +126,7 @@ impl<'a> Lexer<'a> {
         let mut acc = String::new();
         acc.push(starter);
         while let Some(c) = self.chars.peek() {
-            if !c.is_alphanumeric() {
+            if !can_continue_identifier(*c) {
                 break;
             }
             // Fine since we peeked
@@ -211,7 +215,10 @@ mod test {
 
     #[test]
     fn parsing_identifiers_works() {
-        assert_lex!("I64 a12", vec![TypeI64, Name("a12".into())]);
+        assert_lex!(
+            "I64 a12 a_A_?!",
+            vec![TypeI64, Name("a12".into()), Name("a_A_?!".into())]
+        );
     }
 
     #[test]
