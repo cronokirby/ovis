@@ -43,9 +43,10 @@ pub enum TypeExpr {
     I64,
 }
 
-/// Represents a program in our language.
+/// Represents a definition or annotation
 ///
-/// This is just the syntax, with no information about types, and so on
+/// A definition assigns a name to an expression, and a type annotation assigns
+/// an explicit type to a name. Type annotations are optional in our language.
 #[derive(Debug, PartialEq)]
 pub enum Definition {
     /// Represents an annotation of a name with a given type
@@ -54,6 +55,9 @@ pub enum Definition {
     Val(String, Expr),
 }
 
+/// Represents a program in our language.
+///
+/// A program is just a sequence of value or type annotations
 #[derive(Debug, PartialEq)]
 pub struct AST {
     definitions: Vec<Definition>,
