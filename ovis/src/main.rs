@@ -18,10 +18,17 @@ fn main() {
             None => println!("Insufficient arguments"),
             Some(path) => {
                 let contents = fs::read_to_string(path).expect("Couldn't read file");
-                let parsed = parser::parse(&contents);
-                match parsed {
-                    Ok(ast) => println!("{:?}", ast),
-                    Err(e) => println!("Error: {}", e),
+                match lexer::lex(&contents) {
+                    Err(errors) => {
+                        println!("Errors encountered during Lexing:");
+                        for e in errors {
+                            println!("{}", e);
+                        }
+                    }
+                    Ok(tokens) => match parser::parse(&tokens) {
+                        Err(e) => println!("Parse Error: {}", e),
+                        Ok(ast) => println!("{:?}", ast),
+                    },
                 }
             }
         },

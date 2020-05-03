@@ -48,6 +48,16 @@ pub enum Token {
     Name(String),
 }
 
+impl Token {
+    /// Try and get the number containing in a numeric litteral token
+    pub fn get_number(&self) -> Option<i64> {
+        match self {
+            Token::NumberLitt(x) => Some(*x),
+            _ => None,
+        }
+    }
+}
+
 /// Represents an error that can occurr during lexing.
 ///
 /// The lexing phase will usually try to produce as many errors as possible
