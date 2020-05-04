@@ -5,6 +5,49 @@ use std::fmt;
 use std::iter::Peekable;
 use std::str::Chars;
 
+/// An item annotated with the column where it appears
+///
+/// This is useful since we need to be able to keep track of the position
+/// where characters, and ultimately tokens appear in order to handle whitespace sensitivity.
+#[derive(Debug)]
+struct Positioned<T> {
+    item: T,
+    at_col: u64,
+}
+
+/// An iterator that will return characters, along with the column at which they appear
+struct PositionedChars<'a> {
+    chars: Chars<'a>,
+    col: u64,
+}
+
+impl<'a> PositionedChars<'a> {
+    /// Construct a lexer given a source of input to tokenize
+    fn new(input: &'a str) -> Self {
+        PositionedChars {
+            chars: input.chars(),
+            col: 0,
+        }
+    }
+}
+
+impl<'a> Iterator for PositionedChars<'a> {
+    type Item = Positioned<char>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let item = self.chars.next()?;
+        if item == '\n' || item == '\r' {
+            self.col = 0;
+        } else {
+            self.col += 1;
+        }
+        Some(Positioned {
+            item,
+            at_col: self.col,
+        })
+    }
+}
+
 /// Represents a single token that we distinguish while lexing
 ///
 /// Tokens represent a more useful unit of information while parsing. Using tokens
@@ -107,21 +150,21 @@ impl fmt::Display for LexError {
 /// The Lexer takes in our source program, and will start spitting out tokens.
 struct Lexer<'a> {
     /// We hold an iterate over the characters, with a bit of lookahead
-    chars: Peekable<Chars<'a>>,
+    chars: Peekable<PositionedChars<'a>>,
 }
 
 impl<'a> Lexer<'a> {
     /// Construct a lexer given a source of input to tokenize
     fn new(input: &'a str) -> Self {
         Lexer {
-            chars: input.chars().peekable(),
+            chars: PositionedChars::new(input).peekable(),
         }
     }
 
-    fn next_not_whitespace(&mut self) -> Option<char> {
-        while let Some(c) = self.chars.next() {
-            if !c.is_whitespace() {
-                return Some(c);
+    fn next_not_whitespace(&mut self) -> Option<Positioned<char>> {
+        while let Some(p) = self.chars.next() {
+            if !p.item.is_whitespace() {
+                return Some(p);
             }
         }
         None
@@ -131,7 +174,7 @@ impl<'a> Lexer<'a> {
     /// The character passed here must be a valid digit.
     fn number(&mut self, first_digit: char) -> i64 {
         let mut acc: i64 = first_digit.to_digit(10).unwrap() as i64;
-        while let Some(d) = self.chars.peek().and_then(|x| x.to_digit(10)) {
+        while let Some(d) = self.chars.peek().and_then(|x| x.item.to_digit(10)) {
             self.chars.next();
             acc = 10 * acc + (d as i64);
         }
@@ -143,23 +186,24 @@ impl<'a> Lexer<'a> {
     fn identifier(&mut self, starter: char) -> String {
         let mut acc = String::new();
         acc.push(starter);
-        while let Some(c) = self.chars.peek() {
-            if !can_continue_identifier(*c) {
+        while let Some(p) = self.chars.peek() {
+            if !can_continue_identifier(p.item) {
                 break;
             }
             // Fine since we peeked
-            acc.push(self.chars.next().unwrap());
+            acc.push(self.chars.next().unwrap().item);
         }
         acc
     }
 }
 
 impl<'a> Iterator for Lexer<'a> {
-    type Item = Result<Token, LexError>;
+    type Item = Result<Positioned<Token>, LexError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         use Token::*;
-        let res = match self.next_not_whitespace()? {
+        let next = self.next_not_whitespace()?;
+        let res = match next.item {
             '(' => Ok(LeftParens),
             ')' => Ok(RightParens),
             '{' => Ok(LeftBrace),
@@ -171,7 +215,7 @@ impl<'a> Iterator for Lexer<'a> {
             '*' => Ok(Asterisk),
             '/' => Ok(FSlash),
             '\\' => Ok(BSlash),
-            '-' => match self.chars.peek() {
+            '-' => match self.chars.peek().map(|x| x.item) {
                 Some('>') => {
                     self.chars.next();
                     Ok(RightArrow)
@@ -197,8 +241,18 @@ impl<'a> Iterator for Lexer<'a> {
             }
             c => Err(LexError::Unexpected(c)),
         };
-        Some(res)
+        Some(res.map(|t| Positioned {
+            item: t,
+            at_col: next.at_col,
+        }))
     }
+}
+
+/// A virtual token to help us in calculating layouts
+#[derive(Debug, PartialEq)]
+enum LayoutToken {
+    Normal(Token),
+    StartContextAt(u64),
 }
 
 /// Tokenize a string of input into its tokens, or output all the errors we found
@@ -218,7 +272,7 @@ pub fn lex(input: &str) -> Result<Vec<Token>, Vec<LexError>> {
                     had_error = true;
                     errors.push(e)
                 }
-                Ok(t) => tokens.push(t),
+                Ok(t) => tokens.push(t.item),
             }
         }
     }
