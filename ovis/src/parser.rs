@@ -22,6 +22,9 @@ pub enum BinOp {
 pub enum Expr {
     /// A lambda abstraction / function litteral
     Lambda(String, Box<Expr>),
+    /// A let expression, where we have a sequence of definitions bound before
+    /// an expression.
+    Let(Vec<Definition>, Box<Expr>),
     /// A reference to a variable name or definition
     Name(String),
     /// A reference to a positive number
@@ -84,10 +87,13 @@ peg::parser! {
             = [TypeI64] { TypeExpr::I64 }
 
 
-        rule expr() -> Expr = lambda_expr() / arithmetic()
+        rule expr() -> Expr = lambda_expr() / let_expr() / arithmetic()
 
         rule lambda_expr() -> Expr
             = [BSlash] n:name() [RightArrow] e:expr() { Expr::Lambda(n, Box::new(e)) }
+
+        rule let_expr() -> Expr
+            = [Let] [LeftBrace] ds:(definition() ** [Semicolon]) [RightBrace] [In] e:expr() { Expr::Let(ds, Box::new(e)) }
 
         rule arithmetic() -> Expr = precedence!{
             a:(@) [Plus] b:@ { Expr::Binary(BinOp::Add, Box::new(a), Box::new(b)) }
@@ -288,5 +294,22 @@ mod test {
                 ]
             }
         )
+    }
+
+    #[test]
+    fn let_expressions_can_parse() {
+        assert_parse!(
+            "x = let { y = 2; z = 3 } in 4",
+            val_def!(
+                "x",
+                Expr::Let(
+                    vec![
+                        Definition::Val("y".into(), Expr::NumberLitt(2)),
+                        Definition::Val("z".into(), Expr::NumberLitt(3))
+                    ],
+                    Box::new(Expr::NumberLitt(4))
+                )
+            )
+        );
     }
 }

@@ -71,6 +71,8 @@ expr := lambda_expr | arithmetic_expr
 
 lambda_expr := "\" name "->" expr
 
+let_expr := "let" "{" definition (; definition)* "}" "in" expr
+
 arithmetic_expr := add_expr
 add_expr := mul_expr "+" mul_expr | mul_expr "-" mul_expr | mul_expr
 mul_expr := add_expr "*" add_expr | app_expr "/" app_expr | app_expr

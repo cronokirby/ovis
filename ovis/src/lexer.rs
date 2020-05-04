@@ -40,6 +40,14 @@ pub enum Token {
     LeftParens,
     /// Closing ")"
     RightParens,
+    /// Opening "{"
+    LeftBrace,
+    /// Opening "}"
+    RightBrace,
+    /// The keyword "let"
+    Let,
+    /// The keyword "in"
+    In,
     /// The type "I64"
     TypeI64,
     /// Some positive numeric litteral.
@@ -154,6 +162,8 @@ impl<'a> Iterator for Lexer<'a> {
         let res = match self.next_not_whitespace()? {
             '(' => Ok(LeftParens),
             ')' => Ok(RightParens),
+            '{' => Ok(LeftBrace),
+            '}' => Ok(RightBrace),
             '=' => Ok(Equal),
             ':' => Ok(Colon),
             ';' => Ok(Token::Semicolon),
@@ -169,7 +179,15 @@ impl<'a> Iterator for Lexer<'a> {
                 _ => Ok(Minus),
             },
             a if a.is_digit(10) => Ok(NumberLitt(self.number(a))),
-            a if a.is_lowercase() => Ok(Name(self.identifier(a))),
+            a if a.is_lowercase() => {
+                let id = self.identifier(a);
+                let tok = match id.as_ref() {
+                    "let" => Let,
+                    "in" => In,
+                    _ => Name(id),
+                };
+                Ok(tok)
+            }
             a if a.is_uppercase() => {
                 let type_ident = self.identifier(a);
                 match type_ident.as_ref() {
