@@ -84,11 +84,10 @@ peg::parser! {
             = [TypeI64] { TypeExpr::I64 }
 
 
-        rule expr() -> Expr = e:lambda_expr() { e }
+        rule expr() -> Expr = lambda_expr() / arithmetic()
 
         rule lambda_expr() -> Expr
-            = [BSlash] n:name() [RightArrow] e:arithmetic() { Expr::Lambda(n, Box::new(e)) }
-            / e:arithmetic() { e }
+            = [BSlash] n:name() [RightArrow] e:expr() { Expr::Lambda(n, Box::new(e)) }
 
         rule arithmetic() -> Expr = precedence!{
             a:(@) [Plus] b:@ { Expr::Binary(BinOp::Add, Box::new(a), Box::new(b)) }
@@ -232,6 +231,16 @@ mod test {
         assert_parse!(
             r#"x = \y -> 2"#,
             val_def!("x", Expr::Lambda("y".into(), Box::new(Expr::NumberLitt(2))))
+        );
+        assert_parse!(
+            r#"x = \a -> \b -> 2"#,
+            val_def!(
+                "x",
+                Expr::Lambda(
+                    "a".into(),
+                    Box::new(Expr::Lambda("b".into(), Box::new(Expr::NumberLitt(2))))
+                )
+            )
         );
     }
 

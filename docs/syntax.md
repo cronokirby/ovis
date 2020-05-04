@@ -67,8 +67,11 @@ definition := expr_definition | type_annotation
 
 expr_definition := name "=" expr
 
-expr := lambda_expr
-lambda_expr := "\" name "->" add_expr | add_expr
+expr := lambda_expr | arithmetic_expr
+
+lambda_expr := "\" name "->" expr
+
+arithmetic_expr := add_expr
 add_expr := mul_expr "+" mul_expr | mul_expr "-" mul_expr | mul_expr
 mul_expr := add_expr "*" add_expr | app_expr "/" app_expr | app_expr
 unary_minus_expr := "-" app_expr | app_expr
