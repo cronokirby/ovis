@@ -5,14 +5,14 @@ use std::fmt;
 use std::iter::Peekable;
 use std::str::Chars;
 
-/// The positioning of a token that we care about when calculating layout rules.
+/// The position of a token in a line
 ///
-/// We want to know whether a lexeme is in the middle of a line, or whether or not it's
-/// at the start (only whitespace before it) at a certain column
-#[derive(Debug)]
-enum Position {
+/// We need to be able to distinguish whether or not a token is at the start of a line,
+/// with only whitespace before it, or in the middle
+#[derive(Debug, PartialEq)]
+enum LinePosition {
     Middle,
-    StartingAt(u64),
+    Start,
 }
 
 /// An item annotated with the column where it appears
@@ -22,7 +22,8 @@ enum Position {
 #[derive(Debug)]
 struct Positioned<T> {
     item: T,
-    pos: Position,
+    col: u64,
+    line_pos: LinePosition,
 }
 
 /// An iterator that will return non-whitespace characters, along with the position they appear at
@@ -60,14 +61,18 @@ impl<'a> Iterator for PositionedChars<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(c) = self.chars.next() {
             if !c.is_whitespace() {
-                let pos = if self.new_line {
+                let line_pos = if self.new_line {
                     self.new_line = false;
-                    Position::StartingAt(self.col)
+                    LinePosition::Start
                 } else {
-                    Position::Middle
+                    LinePosition::Middle
                 };
                 self.col += 1;
-                return Some(Positioned { item: c, pos });
+                return Some(Positioned {
+                    item: c,
+                    col: self.col,
+                    line_pos,
+                });
             }
             if c == '\n' || c == '\r' {
                 self.new_line = true;
@@ -149,6 +154,14 @@ impl Token {
             _ => None,
         }
     }
+
+    /// True if this token starts a layout (in the grammar) after it
+    fn starts_layout(&self) -> bool {
+        match self {
+            Token::Let => true,
+            _ => false,
+        }
+    }
 }
 
 fn can_continue_identifier(c: char) -> bool {
@@ -167,6 +180,9 @@ pub enum LexError {
     /// This is an error at this stage, since all valid types are known lexically
     /// in advance, since no user-defined types exist.
     UnknownPrimitiveType(String),
+    /// A right brace was encountered will inferring layout that doesn't have
+    /// a corresponding explicit opening brace
+    UnmatchedRightBrace,
 }
 
 impl fmt::Display for LexError {
@@ -175,20 +191,24 @@ impl fmt::Display for LexError {
         match self {
             Unexpected(c) => writeln!(f, "Unexpected character: '{}'", c),
             UnknownPrimitiveType(s) => writeln!(f, "Type {} is not a primitive type", s),
+            UnmatchedRightBrace => writeln!(f, "Unmatched explicit `}}` encountered"),
         }
     }
 }
 
-/// The Lexer takes in our source program, and will start spitting out tokens.
-struct Lexer<'a> {
+/// The tokenizer will spit out tokens along with their position
+///
+/// Before we can use these tokens, we want to use the positions to infer semicolons
+/// and braces.
+struct Tokenizer<'a> {
     /// We hold an iterate over the characters, with a bit of lookahead
     chars: PositionedChars<'a>,
 }
 
-impl<'a> Lexer<'a> {
+impl<'a> Tokenizer<'a> {
     /// Construct a lexer given a source of input to tokenize
     fn new(input: &'a str) -> Self {
-        Lexer {
+        Tokenizer {
             chars: PositionedChars::new(input),
         }
     }
@@ -220,7 +240,7 @@ impl<'a> Lexer<'a> {
     }
 }
 
-impl<'a> Iterator for Lexer<'a> {
+impl<'a> Iterator for Tokenizer<'a> {
     type Item = Result<Positioned<Token>, LexError>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -266,37 +286,138 @@ impl<'a> Iterator for Lexer<'a> {
         };
         Some(res.map(|t| Positioned {
             item: t,
-            pos: next.pos,
+            line_pos: next.line_pos,
+            col: next.col,
         }))
+    }
+}
+
+/// Represents what kind of layout we're expecting to see
+///
+/// If we have an explicit layout, that means that the program contains explicit
+/// braces and semicolons, and we should thus ignore indentation until that layout ends.
+/// Otherwise, we expect new elements in the layout to have a certain indentation,
+/// which we record in the IndentedBy branch
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Layout {
+    Explicit,
+    IndentedBy(u64),
+}
+
+/// This holds the state we need while inferring semicolons and braces from our tokens
+struct Lexer {
+    tokens: Vec<Token>,
+    /// The stack of layout contexts we need to respect
+    ///
+    /// The top represents the current layout, and we pop it off the stack once it finishes
+    layouts: Vec<Layout>,
+    /// Whether or not we're expecting a layout to start
+    ///
+    /// This layout we're expecting can either be started by an explicit brace, or
+    /// implicitly, by the presence of indentation.
+    expecting_layout: bool,
+}
+
+impl Lexer {
+    fn new() -> Self {
+        Lexer {
+            tokens: Vec::new(),
+            layouts: Vec::new(),
+            expecting_layout: true,
+        }
+    }
+
+    fn lex(mut self, tokenizer: &mut Tokenizer) -> Result<Vec<Token>, Vec<LexError>> {
+        let mut errors = Vec::new();
+        for res in tokenizer {
+            match res {
+                Ok(t) => {
+                    if let Err(e) = self.handle_token(t) {
+                        errors.push(e);
+                    }
+                }
+                Err(e) => errors.push(e),
+            }
+        }
+        if errors.is_empty() {
+            self.handle_end();
+            Ok(self.tokens)
+        } else {
+            Err(errors)
+        }
+    }
+
+    fn current_layout(&self) -> Option<Layout> {
+        self.layouts.last().copied()
+    }
+
+    fn handle_token(&mut self, token: Positioned<Token>) -> Result<(), LexError> {
+        // We only handle indents if the token is at the start, and if it doesn't start
+        // a layout. The following branches usually mean that a token will start a layout,
+        // but there's one case where it doesn't, hence the mutable variable.
+        let mut should_handle_indent = token.line_pos == LinePosition::Start;
+        if token.item == Token::RightBrace {
+            should_handle_indent = false;
+            if let Some(Layout::Explicit) = self.current_layout() {
+                self.layouts.pop();
+            } else {
+                return Err(LexError::UnmatchedRightBrace);
+            }
+        } else if token.item.starts_layout() {
+            should_handle_indent = false;
+            self.expecting_layout = true;
+        } else if self.expecting_layout {
+            self.expecting_layout = false;
+            should_handle_indent = false;
+            if token.item == Token::LeftBrace {
+                self.layouts.push(Layout::Explicit);
+            } else {
+                let n = Layout::IndentedBy(token.col);
+                if n > self.current_layout().unwrap_or(Layout::Explicit) {
+                    // A nested layout must be further indented
+                    self.layouts.push(Layout::IndentedBy(token.col));
+                    self.tokens.push(Token::LeftBrace);
+                } else {
+                    // We were expecting a layout, but this actually belongs to a previous
+                    // layout, so this layout is in fact empty. We also need to handle
+                    // the indentation of this token as if it weren't the first token
+                    // of a layout
+                    self.tokens.push(Token::LeftBrace);
+                    self.tokens.push(Token::RightBrace);
+                    should_handle_indent = true;
+                }
+            }
+        }
+        if should_handle_indent {
+            let n = Layout::IndentedBy(token.col);
+            while let Some(true) = self.current_layout().map(|l| n < l) {
+                self.tokens.push(Token::RightBrace);
+                self.layouts.pop();
+            }
+            if let Some(true) = self.current_layout().map(|l| l == n) {
+                self.tokens.push(Token::Semicolon);
+            }
+        }
+        self.tokens.push(token.item);
+        Ok(())
+    }
+
+    /// At the end of the token stream, we need to insert all of the remaining closing
+    /// braces for each layout we started implicitly.
+    fn handle_end(&mut self) {
+        for layout in &self.layouts {
+            if *layout != Layout::Explicit {
+                self.tokens.push(Token::RightBrace);
+            }
+        }
     }
 }
 
 /// Tokenize a string of input into its tokens, or output all the errors we found
 pub fn lex(input: &str) -> Result<Vec<Token>, Vec<LexError>> {
-    let lexer = Lexer::new(input);
-    let mut errors = Vec::new();
-    let mut tokens = Vec::new();
-    let mut had_error = false;
-    for res in lexer {
-        if had_error {
-            if let Err(e) = res {
-                errors.push(e)
-            }
-        } else {
-            match res {
-                Err(e) => {
-                    had_error = true;
-                    errors.push(e)
-                }
-                Ok(t) => tokens.push(t.item),
-            }
-        }
-    }
-    if had_error {
-        Err(errors)
-    } else {
-        Ok(tokens)
-    }
+    let mut tokenizer = Tokenizer::new(input);
+    let lexer = Lexer::new();
+    lexer.lex(&mut tokenizer)
 }
 
 #[cfg(test)]
@@ -313,23 +434,77 @@ mod test {
     }
 
     #[test]
-    fn parsing_identifiers_works() {
+    fn lexing_identifiers_works() {
         assert_lex!(
             "I64 a12 a_A_?!",
-            vec![TypeI64, Name("a12".into()), Name("a_A_?!".into())]
+            vec![
+                LeftBrace,
+                TypeI64,
+                Name("a12".into()),
+                Name("a_A_?!".into()),
+                RightBrace
+            ]
         );
     }
 
     #[test]
-    fn parsing_operators_works() {
+    fn lexing_operators_works() {
         assert_lex!(
             "= : -> + - * / \\",
-            vec![Equal, Colon, RightArrow, Plus, Minus, Asterisk, FSlash, BSlash]
+            vec![
+                LeftBrace, Equal, Colon, RightArrow, Plus, Minus, Asterisk, FSlash, BSlash,
+                RightBrace
+            ]
         );
     }
 
     #[test]
-    fn parsing_numbers_works() {
-        assert_lex!("-69 69", vec![Minus, NumberLitt(69), NumberLitt(69)]);
+    fn lexing_numbers_works() {
+        assert_lex!(
+            "-69 69",
+            vec![LeftBrace, Minus, NumberLitt(69), NumberLitt(69), RightBrace]
+        );
+    }
+
+    #[test]
+    fn lexing_for_nested_layouts_works() {
+        let input = r#"
+            z =
+              let
+                x = 2
+                y =
+                  let
+                    z = 3
+                  in z
+              in 4
+        "#;
+        assert_lex!(
+            input,
+            vec![
+                LeftBrace,
+                Name("z".into()),
+                Equal,
+                Let,
+                LeftBrace,
+                Name("x".into()),
+                Equal,
+                NumberLitt(2),
+                Semicolon,
+                Name("y".into()),
+                Equal,
+                Let,
+                LeftBrace,
+                Name("z".into()),
+                Equal,
+                NumberLitt(3),
+                RightBrace,
+                In,
+                Name("z".into()),
+                RightBrace,
+                In,
+                NumberLitt(4),
+                RightBrace
+            ]
+        )
     }
 }

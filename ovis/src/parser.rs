@@ -122,7 +122,7 @@ peg::parser! {
             = n:name() [Equal] e:expr() { Definition::Val(n, e) }
             / n:name() [Colon] t:typ() { Definition::Type(n, t) }
 
-        pub rule ast() -> AST = ds:(definition() ** [Semicolon]) { AST { definitions: ds } }
+        pub rule ast() -> AST = [LeftBrace] ds:(definition() ** [Semicolon]) [RightBrace] { AST { definitions: ds } }
     }
 }
 
