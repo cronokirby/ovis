@@ -2,69 +2,13 @@ use std::error::Error;
 
 use peg;
 
+use crate::ast;
 use crate::lexer::Token;
+use ast::{BinOp, TypeExpr};
 
-/// Represents a binary operator we can use in arithmetic expressions
-#[derive(Debug, PartialEq)]
-pub enum BinOp {
-    /// The + operator
-    Add,
-    /// The - operator
-    Sub,
-    /// The * operator
-    Mul,
-    /// The / operator
-    Div,
-}
-
-/// Represents a single expression in our language
-#[derive(Debug, PartialEq)]
-pub enum Expr {
-    /// A lambda abstraction / function litteral
-    Lambda(String, Box<Expr>),
-    /// A let expression, where we have a sequence of definitions bound before
-    /// an expression.
-    Let(Vec<Definition>, Box<Expr>),
-    /// A reference to a variable name or definition
-    Name(String),
-    /// A reference to a positive number
-    NumberLitt(i64),
-    /// A binary operation between expressions
-    Binary(BinOp, Box<Expr>, Box<Expr>),
-    /// Unary negation of an expression
-    Negate(Box<Expr>),
-    /// Represents the application of one function to an argument
-    Apply(Box<Expr>, Box<Expr>),
-}
-
-/// Represents a type, formed through primitive types, or composition of other types
-#[derive(Debug, PartialEq)]
-pub enum TypeExpr {
-    /// A function A -> B
-    Function(Box<TypeExpr>, Box<TypeExpr>),
-    /// The primitive integer type
-    I64,
-}
-
-/// Represents a definition or annotation
-///
-/// A definition assigns a name to an expression, and a type annotation assigns
-/// an explicit type to a name. Type annotations are optional in our language.
-#[derive(Debug, PartialEq)]
-pub enum Definition {
-    /// Represents an annotation of a name with a given type
-    Type(String, TypeExpr),
-    /// Represents the definition of name, with its corresponding expression
-    Val(String, Expr),
-}
-
-/// Represents a program in our language.
-///
-/// A program is just a sequence of value or type annotations
-#[derive(Debug, PartialEq)]
-pub struct AST {
-    definitions: Vec<Definition>,
-}
+type Expr = ast::Expr<String>;
+type Definition = ast::Definition<String>;
+type AST = ast::AST<String>;
 
 peg::parser! {
     grammar ast_parser() for [Token] {

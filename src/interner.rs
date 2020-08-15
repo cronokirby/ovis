@@ -43,9 +43,6 @@ impl Dictionary {
     }
 }
 
-/// The identifier for the I64 known string
-pub const IDENT_I64: Ident = Ident(0);
-
 /// Represents a bidirectional mapping
 struct Interner {
     dict: Dictionary,
@@ -57,13 +54,11 @@ impl Interner {
     // Create a new interner, which will contain the built-in identifiers we
     // know of as well
     fn new() -> Self {
-        let mut interner = Interner {
+        Interner {
             dict: Dictionary::new(),
             lookup: HashMap::new(),
             next: Ident(0),
-        };
-        interner.insert("I64".to_string());
-        interner
+        }
     }
 
     // Insert a new string, giving it a new identifier, and incrementing the state
