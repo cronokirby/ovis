@@ -1,4 +1,5 @@
 mod codegen;
+mod interner;
 mod lexer;
 mod parser;
 
