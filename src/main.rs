@@ -33,7 +33,7 @@ fn main() {
                         } else {
                             match parser::parse(&tokens) {
                                 Err(e) => println!("Parse Error: {}", e),
-                                Ok(ast) => println!("{:?}", ast),
+                                Ok(ast) => println!("{:?}", interner::intern(ast)),
                             }
                         }
                     }

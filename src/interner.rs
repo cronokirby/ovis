@@ -1,3 +1,4 @@
+use crate::ast::{Definition, Expr, AST};
 use std::collections::HashMap;
 use std::hash::Hash;
 
@@ -43,6 +44,21 @@ impl Dictionary {
     }
 }
 
+/// Represents an AST where all of the string based identifier have been interned
+///
+/// This means that they've been replaced with unique numeric identifiers, allowing
+/// us to save a lot of space.
+///
+/// We also have a dictionary for the reverse mapping, in order to still be able
+/// to present variable as strings afterwards.
+#[derive(Debug)]
+pub struct InternedAST {
+    /// The dictionary mapping identifiers back to strings
+    pub dict: Dictionary,
+    /// The AST itself, now using identifiers instead of strings like after parsing
+    pub ast: AST<Ident>,
+}
+
 /// Represents a bidirectional mapping
 struct Interner {
     dict: Dictionary,
@@ -73,10 +89,56 @@ impl Interner {
 
     // Get the identifier that a string should have, either looking
     // up what it is, or creating a new identifier for it if it doesn't have one
-    fn get_or_insert(&mut self, v: String) -> Ident {
+    fn ident(&mut self, v: String) -> Ident {
         match self.lookup.get(&v) {
             Some(x) => *x,
             None => self.insert(v),
         }
+    }
+
+    fn ast(&mut self, ast: AST<String>) -> AST<Ident> {
+        AST {
+            definitions: self.definitions(ast.definitions),
+        }
+    }
+
+    fn definitions(&mut self, definitions: Vec<Definition<String>>) -> Vec<Definition<Ident>> {
+        definitions
+            .into_iter()
+            .map(|x| self.definition(x))
+            .collect()
+    }
+
+    fn definition(&mut self, ast: Definition<String>) -> Definition<Ident> {
+        match ast {
+            Definition::Type(name, e) => Definition::Type(self.ident(name), e),
+            Definition::Val(name, e) => Definition::Val(self.ident(name), self.expr(e)),
+        }
+    }
+
+    fn expr(&mut self, ast: Expr<String>) -> Expr<Ident> {
+        match ast {
+            Expr::Lambda(name, e) => Expr::Lambda(self.ident(name), Box::new(self.expr(*e))),
+            Expr::Let(definitions, e) => {
+                Expr::Let(self.definitions(definitions), Box::new(self.expr(*e)))
+            }
+            Expr::Name(name) => Expr::Name(self.ident(name)),
+            Expr::Binary(op, l, r) => {
+                Expr::Binary(op, Box::new(self.expr(*l)), Box::new(self.expr(*r)))
+            }
+            Expr::Negate(e) => Expr::Negate(Box::new(self.expr(*e))),
+            Expr::Apply(f, e) => Expr::Apply(Box::new(self.expr(*f)), Box::new(self.expr(*e))),
+            Expr::NumberLitt(n) => Expr::NumberLitt(n),
+        }
+    }
+}
+
+/// Intern an AST, by replacing all of the strings with unique identifiers
+pub fn intern(ast: AST<String>) -> InternedAST {
+    let mut interner = Interner::new();
+    let ast = interner.ast(ast);
+    InternedAST {
+        ast,
+        dict: interner.dict,
     }
 }
