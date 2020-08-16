@@ -134,6 +134,8 @@ pub enum Token {
     /// We have to handle unary minus, e.g. "-x" or "-69", when parsing later.
     /// We eventually want positive / negative litterals, hence i64 here.
     NumberLitt(i64),
+    /// Represents a single string litteral
+    StringLitt(String),
     /// A reference to some name, e.g. "a23"
     Name(String),
 }
@@ -183,6 +185,8 @@ pub enum LexError {
     /// A right brace was encountered will inferring layout that doesn't have
     /// a corresponding explicit opening brace
     UnmatchedRightBrace,
+    /// A string litteral was started but never ended
+    UnterminatedString,
 }
 
 impl fmt::Display for LexError {
@@ -192,6 +196,7 @@ impl fmt::Display for LexError {
             Unexpected(c) => writeln!(f, "Unexpected character: '{}'", c),
             UnknownPrimitiveType(s) => writeln!(f, "Type {} is not a primitive type", s),
             UnmatchedRightBrace => writeln!(f, "Unmatched explicit `}}` encountered"),
+            UnterminatedString => writeln!(f, "Unterminated string litteral"),
         }
     }
 }
@@ -238,6 +243,21 @@ impl<'a> Tokenizer<'a> {
         }
         acc
     }
+
+    /// Parse a string litteral, assuming that we've already seen a single "
+    ///
+    /// This will consume the closing " as well
+    fn string_litt(&mut self) -> Option<String> {
+        let mut acc = String::new();
+        while let Some(c) = self.chars.next_one() {
+            // If we see the closer, we want things to be ok
+            if c == '"' {
+                return Some(acc);
+            }
+            acc.push(c);
+        }
+        None
+    }
 }
 
 impl<'a> Iterator for Tokenizer<'a> {
@@ -265,6 +285,10 @@ impl<'a> Iterator for Tokenizer<'a> {
                 }
                 _ => Ok(Minus),
             },
+            '"' => self
+                .string_litt()
+                .map(StringLitt)
+                .ok_or(LexError::UnterminatedString),
             a if a.is_digit(10) => Ok(NumberLitt(self.number(a))),
             a if a.is_lowercase() => {
                 let id = self.identifier(a);
@@ -464,6 +488,19 @@ mod test {
             "-69 69",
             vec![LeftBrace, Minus, NumberLitt(69), NumberLitt(69), RightBrace]
         );
+    }
+
+    #[test]
+    fn lexing_strings_works() {
+        assert_lex!(
+            "\"foo\" \"bar\"",
+            vec![
+                LeftBrace,
+                StringLitt("foo".into()),
+                StringLitt("bar".into()),
+                RightBrace
+            ]
+        )
     }
 
     #[test]
