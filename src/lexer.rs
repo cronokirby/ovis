@@ -130,6 +130,8 @@ pub enum Token {
     In,
     /// The type "I64"
     TypeI64,
+    /// The type "String",
+    TypeString,
     /// Some positive numeric litteral.
     /// We have to handle unary minus, e.g. "-x" or "-69", when parsing later.
     /// We eventually want positive / negative litterals, hence i64 here.
@@ -303,6 +305,7 @@ impl<'a> Iterator for Tokenizer<'a> {
                 let type_ident = self.identifier(a);
                 match type_ident.as_ref() {
                     "I64" => Ok(TypeI64),
+                    "String" => Ok(TypeString),
                     _ => Err(LexError::UnknownPrimitiveType(type_ident)),
                 }
             }
@@ -460,10 +463,11 @@ mod test {
     #[test]
     fn lexing_identifiers_works() {
         assert_lex!(
-            "I64 a12 a_A_?!",
+            "I64 String a12 a_A_?!",
             vec![
                 LeftBrace,
                 TypeI64,
+                TypeString,
                 Name("a12".into()),
                 Name("a_A_?!".into()),
                 RightBrace
