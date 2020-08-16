@@ -102,23 +102,26 @@ impl Interner {
         }
     }
 
-    fn definitions(&mut self, definitions: Vec<Definition<String>>) -> Vec<Definition<Ident>> {
+    fn definitions<T>(
+        &mut self,
+        definitions: Vec<Definition<String, T>>,
+    ) -> Vec<Definition<Ident, T>> {
         definitions
             .into_iter()
             .map(|x| self.definition(x))
             .collect()
     }
 
-    fn definition(&mut self, ast: Definition<String>) -> Definition<Ident> {
+    fn definition<T>(&mut self, ast: Definition<String, T>) -> Definition<Ident, T> {
         match ast {
             Definition::Type(name, e) => Definition::Type(self.ident(name), e),
-            Definition::Val(name, e) => Definition::Val(self.ident(name), self.expr(e)),
+            Definition::Val(name, t, e) => Definition::Val(self.ident(name), t, self.expr(e)),
         }
     }
 
-    fn expr(&mut self, ast: Expr<String>) -> Expr<Ident> {
+    fn expr<T>(&mut self, ast: Expr<String, T>) -> Expr<Ident, T> {
         match ast {
-            Expr::Lambda(name, e) => Expr::Lambda(self.ident(name), Box::new(self.expr(*e))),
+            Expr::Lambda(name, t, e) => Expr::Lambda(self.ident(name), t, Box::new(self.expr(*e))),
             Expr::Let(definitions, e) => {
                 Expr::Let(self.definitions(definitions), Box::new(self.expr(*e)))
             }
