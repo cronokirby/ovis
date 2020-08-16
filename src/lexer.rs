@@ -151,6 +151,14 @@ impl Token {
         }
     }
 
+    /// Try and get the string out of this token, if possible
+    pub fn get_string(&self) -> Option<&str> {
+        match self {
+            Token::StringLitt(s) => Some(s),
+            _ => None
+        }
+    }
+
     /// Get the name contained in this token, if possible
     pub fn get_name(&self) -> Option<&str> {
         match self {

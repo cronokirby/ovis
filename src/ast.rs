@@ -23,6 +23,8 @@ pub enum Expr<I> {
     Name(I),
     /// A reference to a positive number
     NumberLitt(i64),
+    /// A reference to a string litteral
+    StringLitt(String),
     /// A binary operation between expressions
     Binary(BinOp, Box<Expr<I>>, Box<Expr<I>>),
     /// Unary negation of an expression
@@ -38,6 +40,8 @@ pub enum TypeExpr {
     Function(Box<TypeExpr>, Box<TypeExpr>),
     /// The primitive integer type
     I64,
+    /// The primitive string type
+    Strng,
 }
 
 /// Represents a definition or annotation

@@ -17,6 +17,9 @@ peg::parser! {
         rule number_litt() -> Expr
             = n:$[NumberLitt(_)] { Expr::NumberLitt(n[0].get_number().unwrap()) }
 
+        rule string_litt() -> Expr
+            = s:$[StringLitt(_)] { Expr::StringLitt(s[0].get_string().unwrap().to_string()) }
+
         rule name() -> String
             = n:$[Name(_)] { n[0].get_name().unwrap().to_string() }
 
@@ -29,6 +32,7 @@ peg::parser! {
 
         rule primitive_type() -> TypeExpr
             = [TypeI64] { TypeExpr::I64 }
+            / [TypeString] { TypeExpr::Strng }
 
 
         rule expr() -> Expr = lambda_expr() / let_expr() / arithmetic()
@@ -58,6 +62,7 @@ peg::parser! {
 
         rule factor() -> Expr
             = e:number_litt() { e }
+            / s:string_litt()
             / n:name() { Expr::Name(n) }
             / [LeftParens] e:expr() [RightParens] { e }
 
@@ -192,6 +197,19 @@ mod test {
                 )
             )
         );
+    }
+
+    #[test]
+    fn string_expressions_parse() {
+        assert_parse!(
+            "x : String\nx = \"foo\"",
+            AST {
+                definitions: vec![
+                    Definition::Type("x".into(), TypeExpr::Strng),
+                    Definition::Val("x".into(), Expr::StringLitt("foo".into()))
+                ]
+            }
+        )
     }
 
     #[test]

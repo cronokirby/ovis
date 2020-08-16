@@ -129,6 +129,7 @@ impl Interner {
             Expr::Negate(e) => Expr::Negate(Box::new(self.expr(*e))),
             Expr::Apply(f, e) => Expr::Apply(Box::new(self.expr(*f)), Box::new(self.expr(*e))),
             Expr::NumberLitt(n) => Expr::NumberLitt(n),
+            Expr::StringLitt(s) => Expr::StringLitt(s),
         }
     }
 }

@@ -7,3 +7,6 @@ y =
     a = 2
     b = 3
   in a + b
+
+z : String
+z = "z is z"
