@@ -17,7 +17,7 @@ fn main() {
     let all_args: Vec<String> = std::env::args().collect();
     match all_args.get(1).map(String::as_str) {
         Some("generate") => generate(),
-        Some("parse") | Some("lex") => match all_args.get(2) {
+        Some("run") => match all_args.get(2) {
             None => println!("Insufficient arguments"),
             Some(path) => {
                 let contents = fs::read_to_string(path).expect("Couldn't read file");
@@ -34,7 +34,13 @@ fn main() {
                         } else {
                             match parser::parse(&tokens) {
                                 Err(e) => println!("Parse Error: {}", e),
-                                Ok(ast) => println!("{:?}", interner::intern(ast)),
+                                Ok(ast) => {
+                                    let interned = interner::intern(ast);
+                                    match typer::typer(interned.ast) {
+                                        Ok(typed) => println!("Typed:\n {:?}", typed),
+                                        Err(e) => println!("Type Error: {:?}", e),
+                                    }
+                                }
                             }
                         }
                     }
