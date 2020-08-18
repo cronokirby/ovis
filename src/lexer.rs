@@ -1,6 +1,7 @@
 //! This module handles the lexing of strings into tokens for our parser.
 //!
 //! We mainly need a lexing phase to handle (eliminate) whitespace
+use std::error::Error;
 use std::fmt;
 use std::iter::Peekable;
 use std::str::Chars;
@@ -155,7 +156,7 @@ impl Token {
     pub fn get_string(&self) -> Option<&str> {
         match self {
             Token::StringLitt(s) => Some(s),
-            _ => None
+            _ => None,
         }
     }
 
@@ -208,6 +209,12 @@ impl fmt::Display for LexError {
             UnmatchedRightBrace => writeln!(f, "Unmatched explicit `}}` encountered"),
             UnterminatedString => writeln!(f, "Unterminated string litteral"),
         }
+    }
+}
+
+impl Error for LexError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        None
     }
 }
 
