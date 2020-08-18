@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::fmt;
 
 use peg;
 
@@ -75,12 +76,34 @@ peg::parser! {
     }
 }
 
+/// Represents the type of error that can occurr while parsing
+///
+/// This is an opaque type, and should be presented to the user directly, more or less.
+/// There's no way to recover from a parse error, with this compiler architecture, anyways.
+#[derive(Debug, PartialEq)]
+pub struct ParseError(peg::error::ParseError<usize>);
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl Error for ParseError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        self.0.source()
+    }
+}
+
+impl From<peg::error::ParseError<usize>> for ParseError {
+    fn from(e: peg::error::ParseError<usize>) -> Self {
+        ParseError(e)
+    }
+}
+
 /// Parse a string with into our first AST.
 ///
-/// This can fail if the string doesn't match the syntax of our language. We return
-/// `impl Error` in order to hide the internal implementation of errors. There's nothing
-/// useful we can do in terms of recovery anyways. If parsing fails, we should just
-/// present that error to the user.
+/// This can fail if the string doesn't match the syntax of our language.
 ///
 /// # Examples
 ///
@@ -88,8 +111,8 @@ peg::parser! {
 /// let result = parse("-69");
 /// assert_eq!(result, Ok(AST::NumberLitt(69)));
 /// ```
-pub fn parse(input: &[Token]) -> Result<AST, impl Error> {
-    ast_parser::ast(input)
+pub fn parse(input: &[Token]) -> Result<AST, ParseError> {
+    ast_parser::ast(input).map_err(|x| x.into())
 }
 
 #[cfg(test)]
