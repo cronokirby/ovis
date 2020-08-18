@@ -4,6 +4,7 @@ mod lexer;
 mod parser;
 mod typer;
 
+use std::convert::TryFrom;
 use std::error::Error;
 use std::fmt;
 use std::fs;
@@ -66,26 +67,81 @@ impl From<typer::TypeError> for CompileError {
     }
 }
 
-fn parse_and_type(path: &str) -> Result<ast::AST<interner::Ident, typer::Type>, CompileError> {
+#[derive(Debug, PartialEq, PartialOrd)]
+/// Represents the stage up to which the user would like us to go
+enum Stage {
+    /// The user wants us to stop after lexing
+    Lex,
+    /// The user wants us to stop after parsing (and thus lexing)
+    Parse,
+    /// The user wants us to stop after type checking (and thus parsing)
+    Type,
+}
+
+impl TryFrom<&str> for Stage {
+    type Error = ();
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "lex" => Ok(Stage::Lex),
+            "parse" => Ok(Stage::Parse),
+            "type" => Ok(Stage::Type),
+            _ => Err(()),
+        }
+    }
+}
+
+/// Represents the type of arguments provided to us
+struct Args {
+    /// The stage we need to go to
+    stage: Stage,
+    /// The path for the file we're operating on
+    path: String,
+}
+
+impl TryFrom<&[String]> for Args {
+    type Error = ();
+
+    fn try_from(args: &[String]) -> Result<Self, Self::Error> {
+        if args.len() < 3 {
+            Err(())
+        } else {
+            let stage = Stage::try_from(args[1].as_ref())?;
+            let path = args[2].to_string();
+            Ok(Args { stage, path })
+        }
+    }
+}
+
+fn real_main(args: Args) -> Result<(), CompileError> {
     let contents =
-        fs::read_to_string(path).map_err(|_| CompileError::CouldntRead(path.to_owned()))?;
+        fs::read_to_string(&args.path).map_err(|_| CompileError::CouldntRead(args.path.clone()))?;
     let tokens = lexer::lex(&contents)?;
+    if args.stage <= Stage::Lex {
+        println!("Lex: {:?}", tokens);
+        return Ok(());
+    }
     let ast = parser::parse(&tokens)?;
     let interned = interner::intern(ast);
+    if args.stage <= Stage::Parse {
+        println!("Parse: {:?}", interned);
+        return Ok(());
+    }
     let typed = typer::typer(interned.ast)?;
-    Ok(typed)
+    if args.stage <= Stage::Type {
+        println!("Typed: {:?}", typed);
+        return Ok(());
+    }
+    Ok(())
 }
 
 fn main() {
-    let all_args: Vec<String> = std::env::args().collect();
-    match all_args.get(1).map(String::as_str) {
-        Some("compile") => match all_args.get(2) {
-            None => println!("Insufficient arguments"),
-            Some(path) => match parse_and_type(path) {
-                Err(e) => println!("{}", e),
-                Ok(ast) => println!("Typed AST: {:?}", ast),
-            },
+    let arg_strings: Vec<String> = std::env::args().collect();
+    match Args::try_from(arg_strings.as_ref()) {
+        Err(_) => println!("Insufficient Arguments"),
+        Ok(args) => match real_main(args) {
+            Err(e) => println!("{}", e),
+            Ok(_) => {}
         },
-        _ => println!("Insufficient arguments"),
     }
 }
