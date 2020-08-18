@@ -3,6 +3,7 @@ mod codegen;
 mod interner;
 mod lexer;
 mod parser;
+mod typer;
 
 use std::fs;
 
