@@ -2,7 +2,7 @@ use crate::ast::AST;
 use crate::interner::Ident;
 
 use std::error::Error;
-use std::fmt;
+use std::fmt::{Display, Formatter, Result as FmtResult};
 
 /// Represents a base type in our language
 ///
@@ -16,6 +16,17 @@ pub enum BaseType {
     String,
 }
 
+use BaseType::*;
+
+impl Display for BaseType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match self {
+            I64 => write!(f, "I64"),
+            String => write!(f, "String"),
+        }
+    }
+}
+
 /// Represents the recursive structure of types.
 ///
 /// This is parametrized over the kind of basic types we have. This is useful
@@ -24,7 +35,25 @@ pub enum BaseType {
 /// the full type be unknown.
 #[derive(Clone, Debug, PartialEq)]
 pub enum TypeStructure<T> {
-    Function(Box<T>, Box<T>),
+    /// A base type
+    Base(T),
+    /// A function type between two other types, potentially functions
+    Function(Box<TypeStructure<T>>, Box<TypeStructure<T>>),
+}
+
+use TypeStructure::*;
+
+impl<T: Display> Display for TypeStructure<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match self {
+            Base(t) => write!(f, "{}", t),
+            Function(func, t2) => match func.as_ref() {
+                // We want to wrap parens in the correct way
+                Function(_, _) => write!(f, "({}) -> {}", func, t2),
+                Base(t1) => write!(f, "{} -> {}", t1, t2),
+            },
+        }
+    }
 }
 
 /// Represents a fully evaluated type for some expression
@@ -41,6 +70,17 @@ enum MaybeBase {
     Known(BaseType),
 }
 
+use MaybeBase::*;
+
+impl Display for MaybeBase {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match self {
+            Unknown => write!(f, "?"),
+            Known(b) => write!(f, "{}", b),
+        }
+    }
+}
+
 /// A full set of types, where the basic types can potentially include the absence of knowledge.
 type MaybeType = TypeStructure<MaybeBase>;
 
@@ -50,8 +90,8 @@ pub enum TypeError {
     Unknown,
 }
 
-impl fmt::Display for TypeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Display for TypeError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             TypeError::Unknown => write!(f, "Unknown Type Error"),
         }
@@ -70,4 +110,36 @@ impl Error for TypeError {
 /// the kind of error that occurred.
 pub fn typer(untyped: AST<Ident, ()>) -> Result<AST<Ident, Type>, TypeError> {
     Err(TypeError::Unknown)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn types_display_correctly() {
+        assert_eq!("I64", format!("{}", I64));
+        assert_eq!("String", format!("{}", String));
+        assert_eq!(
+            "I64 -> String",
+            format!("{}", Function(Box::new(Base(I64)), Box::new(Base(String))))
+        );
+        assert_eq!(
+            "(I64 -> I64) -> I64",
+            format!(
+                "{}",
+                Function(
+                    Box::new(Function(Box::new(Base(I64)), Box::new(Base(I64)))),
+                    Box::new(Base(I64))
+                )
+            )
+        );
+        assert_eq!(
+            "? -> I64",
+            format!(
+                "{}",
+                Function(Box::new(Base(Unknown)), Box::new(Base(Known(I64))))
+            )
+        );
+    }
 }
