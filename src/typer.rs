@@ -1,5 +1,6 @@
 use crate::ast::AST;
 use crate::interner::Ident;
+use std::collections::HashMap;
 
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
@@ -101,6 +102,92 @@ impl Display for TypeError {
 impl Error for TypeError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         None
+    }
+}
+
+/// Holds a context assigning types to specific identifiers
+///
+/// This also handles concerns like lexical scoping, allowing us to work with
+/// multiple scopes, and variables shadowing those with the same name in higher
+/// scopes.
+#[derive(Debug)]
+struct Context {
+    /// A stack of mappings from identifier to type
+    ///
+    /// Invariant: scopes is never empty
+    ///
+    /// When we enter a new lexical scope, we push a new object onto this stack,
+    /// because of this, it means that the last element of this stack is always
+    /// the latest lexical scope.
+    scopes: Vec<HashMap<Ident, MaybeType>>,
+}
+
+impl Context {
+    /// Create a new context, with the right global scope
+    fn new() -> Context {
+        // We start out with a single global scope, naturally
+        Context {
+            scopes: vec![HashMap::new()],
+        }
+    }
+
+    /// Enter a new lexical scope, i.e. we're seeing new variables that are allowed
+    /// to shadow previous ones.
+    fn enter(&mut self) {
+        self.scopes.push(HashMap::new());
+    }
+
+    /// Exit the latest lexical scope.
+    ///
+    /// If this causes there to be no current scope, this panics.
+    /// When we're at the end of a global scope, we should simple do nothing,
+    /// to avoid this panic.
+    fn exit(&mut self) {
+        self.scopes.pop();
+        // We want to panic early if the context is ever empty
+        // We always have the global context to work with
+        if self.scopes.is_empty() {
+            panic!("Context has been completely emptied")
+        }
+    }
+
+    /// Introduce a new variable in a scope.
+    ///
+    /// This should be called before assigning a type to that identifier.
+    fn introduce(&mut self, ident: Ident) {
+        // We don't even bother with crawling, since we'll always need to introduce a new
+        // variable in the latest scope.
+        // Unwrapping is safe, because of the invariant
+        let last = self.scopes.last_mut().unwrap();
+        // We only want to introduce a variable if it's not already there
+        last.entry(ident).or_insert(Base(Unknown));
+    }
+
+    /// Assign a new type, or concrete type, to a variable already in scope
+    ///
+    /// This is useful in inference, but should always be called after introduce,
+    /// otherwise it will panic.
+    ///
+    /// Precisely, it will panic whenever we're not able to find the variable in some scope above us.
+    fn assign(&mut self, ident: Ident, typ: MaybeType) {
+        for scope in self.scopes.iter_mut().rev() {
+            if let Some(v) = scope.get_mut(&ident) {
+                *v = typ;
+                return;
+            }
+        }
+        panic!(
+            "Unthinkable: Tried to assign a type to {:?}, which is present in no scope",
+            ident
+        );
+    }
+
+    /// Find the type of a specific identifer, if it exists.
+    ///
+    /// This will modify the most recent occurrence of the identifier, which
+    /// is correct in terms of shadowing.
+    fn type_of(&self, ident: Ident) -> Option<&MaybeType> {
+        self.scopes.iter().rev().find_map(|map| map.get(&ident))
     }
 }
 
