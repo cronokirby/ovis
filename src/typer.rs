@@ -85,6 +85,28 @@ impl Display for MaybeBase {
 /// A full set of types, where the basic types can potentially include the absence of knowledge.
 type MaybeType = TypeStructure<MaybeBase>;
 
+/// Try and find the most specialized version of two types
+fn specialize(t1: MaybeType, t2: MaybeType) -> Option<MaybeType> {
+    match (t1, t2) {
+        (Base(Known(t1)), Base(Known(t2))) => {
+            if t1 != t2 {
+                None
+            } else {
+                Some(Base(Known(t1)))
+            }
+        }
+        (Base(Unknown), t2) => Some(t2),
+        (t1, Base(Unknown)) => Some(t1),
+        (Function(_, _), Base(_)) => None,
+        (Base(_), Function(_, _)) => None,
+        (Function(f1, a1), Function(f2, a2)) => {
+            let s1 = specialize(*f1, *f2)?;
+            let s2 = specialize(*a1, *a2)?;
+            Some(Function(Box::new(s1), Box::new(s2)))
+        }
+    }
+}
+
 /// Try and convert a type expression to a maybe type
 fn parse_type_expr(expr: &TypeExpr) -> MaybeType {
     match expr {
@@ -223,7 +245,7 @@ impl Typer {
                 None => Err(TypeError::UndefinedName(n)),
                 Some(typ) => Ok((Expr::Name(n), typ.clone())),
             },
-            _ => unimplemented!()
+            _ => unimplemented!(),
         }
     }
 
