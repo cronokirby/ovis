@@ -122,6 +122,7 @@ fn parse_type_expr(expr: &TypeExpr) -> MaybeType {
 #[derive(Clone, Debug, PartialEq)]
 pub enum TypeError {
     UndefinedName(Ident),
+    Expected(MaybeType, MaybeType),
     ConflictingTypes(Ident, MaybeType, MaybeType),
     Unknown,
 }
@@ -130,6 +131,7 @@ impl Display for TypeError {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             TypeError::UndefinedName(i) => write!(f, "Undefined identifier {:?}", i),
+            TypeError::Expected(t1, t2) => write!(f, "Expected {}, found {}", t1, t2),
             TypeError::ConflictingTypes(i, t1, t2) => {
                 write!(f, "Conflicting types for {:?}, {}, and {}", i, t1, t2)
             }
@@ -141,6 +143,14 @@ impl Display for TypeError {
 impl Error for TypeError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         None
+    }
+}
+
+/// Expect to find a certain type, and report an error if we can't specialize to that type
+fn expect_type(expected: MaybeType, actual: MaybeType) -> Result<MaybeType, TypeError> {
+    match specialize(&expected, &actual) {
+        None => Err(TypeError::Expected(expected, actual)),
+        Some(t) => Ok(t),
     }
 }
 
@@ -256,6 +266,19 @@ impl Typer {
                 None => Err(TypeError::UndefinedName(n)),
                 Some(typ) => Ok((Expr::Name(n), typ.clone())),
             },
+            Expr::NumberLitt(n) => Ok((Expr::NumberLitt(n), Base(Known(I64)))),
+            Expr::StringLitt(s) => Ok((Expr::StringLitt(s), Base(Known(Strng)))),
+            Expr::Binary(op, e1, e2) => {
+                let (r1, t1) = self.expr(*e1)?;
+                expect_type(Base(Known(I64)), t1)?;
+                let (r2, t2) = self.expr(*e2)?;
+                expect_type(Base(Known(I64)), t2)?;
+                // We know that the result of a binary expression is always an integer
+                Ok((
+                    Expr::Binary(op, Box::new(r1), Box::new(r2)),
+                    Base(Known(I64)),
+                ))
+            }
             _ => unimplemented!(),
         }
     }
