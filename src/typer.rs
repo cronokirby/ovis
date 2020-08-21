@@ -1,4 +1,4 @@
-use crate::ast::AST;
+use crate::ast::{Definition, TypeExpr, AST};
 use crate::interner::Ident;
 use std::collections::HashMap;
 
@@ -14,7 +14,7 @@ pub enum BaseType {
     /// The primitive integer type
     I64,
     /// The primitive string type
-    String,
+    Strng,
 }
 
 use BaseType::*;
@@ -23,7 +23,7 @@ impl Display for BaseType {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             I64 => write!(f, "I64"),
-            String => write!(f, "String"),
+            Strng => write!(f, "String"),
         }
     }
 }
@@ -84,6 +84,17 @@ impl Display for MaybeBase {
 
 /// A full set of types, where the basic types can potentially include the absence of knowledge.
 type MaybeType = TypeStructure<MaybeBase>;
+
+/// Try and convert a type expression to a maybe type
+fn parse_type_expr(expr: &TypeExpr) -> MaybeType {
+    match expr {
+        TypeExpr::I64 => Base(Known(I64)),
+        TypeExpr::Strng => Base(Known(Strng)),
+        TypeExpr::Function(t1, t2) => {
+            Function(Box::new(parse_type_expr(t1)), Box::new(parse_type_expr(t2)))
+        }
+    }
+}
 
 /// This represents the errors that can occurr will assigning types to the program tree
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -191,6 +202,34 @@ impl Context {
     }
 }
 
+/// Represents a struct containing the information we need to type things
+struct Typer {
+    /// The context containing the types we're working with
+    context: Context,
+}
+
+impl Typer {
+    fn new() -> Self {
+        Typer {
+            context: Context::new(),
+        }
+    }
+
+    fn run(&mut self, untyped: AST<Ident, ()>) -> Result<AST<Ident, Type>, TypeError> {
+        // First, try and gather all the top level type annotations
+        for d in &untyped.definitions {
+            match d {
+                Definition::Val(_, _, _) => {}
+                Definition::Type(i, t) => {
+                    self.context.introduce(*i);
+                    self.context.assign(*i, parse_type_expr(t))
+                }
+            }
+        }
+        unimplemented!()
+    }
+}
+
 /// Try and assign types to a syntax tree
 ///
 /// Of course, this can potentially fail, in which case we'll return an error describing
@@ -206,10 +245,10 @@ mod test {
     #[test]
     fn types_display_correctly() {
         assert_eq!("I64", format!("{}", I64));
-        assert_eq!("String", format!("{}", String));
+        assert_eq!("String", format!("{}", Strng));
         assert_eq!(
             "I64 -> String",
-            format!("{}", Function(Box::new(Base(I64)), Box::new(Base(String))))
+            format!("{}", Function(Box::new(Base(I64)), Box::new(Base(Strng))))
         );
         assert_eq!(
             "(I64 -> I64) -> I64",
