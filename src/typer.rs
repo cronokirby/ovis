@@ -279,6 +279,12 @@ impl Typer {
                     Base(Known(I64)),
                 ))
             }
+            Expr::Negate(e) => {
+                let (r, t) = self.expr(*e)?;
+                expect_type(Base(Known(I64)), t)?;
+
+                Ok((Expr::Negate(Box::new(r)), Base(Known(I64))))
+            }
             _ => unimplemented!(),
         }
     }
