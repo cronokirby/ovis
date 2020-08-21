@@ -1,4 +1,4 @@
-use crate::ast::{Definition, TypeExpr, AST};
+use crate::ast::{Definition, Expr, TypeExpr, AST};
 use crate::interner::Ident;
 use std::collections::HashMap;
 
@@ -99,12 +99,14 @@ fn parse_type_expr(expr: &TypeExpr) -> MaybeType {
 /// This represents the errors that can occurr will assigning types to the program tree
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum TypeError {
+    UndefinedName(Ident),
     Unknown,
 }
 
 impl Display for TypeError {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
+            TypeError::UndefinedName(i) => write!(f, "Undefined identifier {:?}", i),
             TypeError::Unknown => write!(f, "Unknown Type Error"),
         }
     }
@@ -212,6 +214,16 @@ impl Typer {
     fn new() -> Self {
         Typer {
             context: Context::new(),
+        }
+    }
+
+    fn expr(&mut self, expr: Expr<Ident, ()>) -> Result<(Expr<Ident, Type>, MaybeType), TypeError> {
+        match expr {
+            Expr::Name(n) => match self.context.type_of(n) {
+                None => Err(TypeError::UndefinedName(n)),
+                Some(typ) => Ok((Expr::Name(n), typ.clone())),
+            },
+            _ => unimplemented!()
         }
     }
 
