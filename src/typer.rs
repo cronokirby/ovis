@@ -86,22 +86,22 @@ impl Display for MaybeBase {
 type MaybeType = TypeStructure<MaybeBase>;
 
 /// Try and find the most specialized version of two types
-fn specialize(t1: MaybeType, t2: MaybeType) -> Option<MaybeType> {
+fn specialize(t1: &MaybeType, t2: &MaybeType) -> Option<MaybeType> {
     match (t1, t2) {
         (Base(Known(t1)), Base(Known(t2))) => {
             if t1 != t2 {
                 None
             } else {
-                Some(Base(Known(t1)))
+                Some(Base(Known(t2.clone())))
             }
         }
-        (Base(Unknown), t2) => Some(t2),
-        (t1, Base(Unknown)) => Some(t1),
+        (Base(Unknown), t2) => Some(t2.clone()),
+        (t1, Base(Unknown)) => Some(t1.clone()),
         (Function(_, _), Base(_)) => None,
         (Base(_), Function(_, _)) => None,
         (Function(f1, a1), Function(f2, a2)) => {
-            let s1 = specialize(*f1, *f2)?;
-            let s2 = specialize(*a1, *a2)?;
+            let s1 = specialize(f1, f2)?;
+            let s2 = specialize(a1, a2)?;
             Some(Function(Box::new(s1), Box::new(s2)))
         }
     }
@@ -119,9 +119,10 @@ fn parse_type_expr(expr: &TypeExpr) -> MaybeType {
 }
 
 /// This represents the errors that can occurr will assigning types to the program tree
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum TypeError {
     UndefinedName(Ident),
+    ConflictingTypes(Ident, MaybeType, MaybeType),
     Unknown,
 }
 
@@ -129,6 +130,9 @@ impl Display for TypeError {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             TypeError::UndefinedName(i) => write!(f, "Undefined identifier {:?}", i),
+            TypeError::ConflictingTypes(i, t1, t2) => {
+                write!(f, "Conflicting types for {:?}, {}, and {}", i, t1, t2)
+            }
             TypeError::Unknown => write!(f, "Unknown Type Error"),
         }
     }
@@ -204,11 +208,18 @@ impl Context {
     /// otherwise it will panic.
     ///
     /// Precisely, it will panic whenever we're not able to find the variable in some scope above us.
-    fn assign(&mut self, ident: Ident, typ: MaybeType) {
+    ///
+    /// It will also fail if we try to assign a type that's incompatible with the current type we have
+    fn assign(&mut self, ident: Ident, typ: MaybeType) -> Result<(), TypeError> {
         for scope in self.scopes.iter_mut().rev() {
             if let Some(v) = scope.get_mut(&ident) {
-                *v = typ;
-                return;
+                return match specialize(v, &typ) {
+                    None => Err(TypeError::ConflictingTypes(ident, v.clone(), typ)),
+                    Some(t) => {
+                        *v = t;
+                        Ok(())
+                    }
+                };
             }
         }
         panic!(
@@ -256,7 +267,7 @@ impl Typer {
                 Definition::Val(_, _, _) => {}
                 Definition::Type(i, t) => {
                     self.context.introduce(*i);
-                    self.context.assign(*i, parse_type_expr(t))
+                    self.context.assign(*i, parse_type_expr(t))?;
                 }
             }
         }
