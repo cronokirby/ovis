@@ -260,6 +260,23 @@ impl Typer {
         }
     }
 
+    fn apply(
+        &mut self,
+        f: Expr<Ident, ()>,
+        e: Expr<Ident, ()>,
+    ) -> Result<(Expr<Ident, Type>, MaybeType), TypeError> {
+        let (fr, ft) = self.expr(f)?;
+        let (er, et) = self.expr(e)?;
+        // We expect the function type to conform with the argument type
+        let ft = expect_type(Function(Box::new(et), Box::new(Base(Unknown))), ft)?;
+        // And the final type for this expression is whatever we've managed to infer for the return type
+        let result_type = match ft {
+            Function(_, rt) => *rt,
+            _ => panic!("Unthinkable: specialized function type is not function type"),
+        };
+        Ok((Expr::Apply(Box::new(fr), Box::new(er)), result_type))
+    }
+
     fn expr(&mut self, expr: Expr<Ident, ()>) -> Result<(Expr<Ident, Type>, MaybeType), TypeError> {
         match expr {
             Expr::Name(n) => match self.context.type_of(n) {
@@ -285,6 +302,7 @@ impl Typer {
 
                 Ok((Expr::Negate(Box::new(r)), Base(Known(I64))))
             }
+            Expr::Apply(f, e) => self.apply(*f, *e),
             _ => unimplemented!(),
         }
     }
