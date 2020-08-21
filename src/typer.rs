@@ -107,6 +107,18 @@ fn specialize(t1: &MaybeType, t2: &MaybeType) -> Option<MaybeType> {
     }
 }
 
+fn unwrap_partial(t: &MaybeType) -> Option<Type> {
+    match t {
+        Base(Known(t)) => Some(Base(t.clone())),
+        Function(t1, t2) => {
+            let t1 = unwrap_partial(t1)?;
+            let t2 = unwrap_partial(t2)?;
+            Some(Function(Box::new(t1), Box::new(t2)))
+        }
+        _ => None,
+    }
+}
+
 /// Try and convert a type expression to a maybe type
 fn parse_type_expr(expr: &TypeExpr) -> MaybeType {
     match expr {
@@ -123,6 +135,7 @@ fn parse_type_expr(expr: &TypeExpr) -> MaybeType {
 pub enum TypeError {
     UndefinedName(Ident),
     Expected(MaybeType, MaybeType),
+    PartialType(Ident, MaybeType),
     ConflictingTypes(Ident, MaybeType, MaybeType),
     Unknown,
 }
@@ -134,6 +147,9 @@ impl Display for TypeError {
             TypeError::Expected(t1, t2) => write!(f, "Expected {}, found {}", t1, t2),
             TypeError::ConflictingTypes(i, t1, t2) => {
                 write!(f, "Conflicting types for {:?}, {}, and {}", i, t1, t2)
+            }
+            TypeError::PartialType(i, t) => {
+                write!(f, "For {:?}, only able to infer partial type {}", i, t)
             }
             TypeError::Unknown => write!(f, "Unknown Type Error"),
         }
@@ -275,6 +291,24 @@ impl Typer {
             _ => panic!("Unthinkable: specialized function type is not function type"),
         };
         Ok((Expr::Apply(Box::new(fr), Box::new(er)), result_type))
+    }
+
+    fn lambda(
+        &mut self,
+        i: Ident,
+        e: Expr<Ident, ()>,
+    ) -> Result<(Expr<Ident, Type>, MaybeType), TypeError> {
+        self.context.enter();
+        self.context.introduce(i);
+        let (er, et) = self.expr(e)?;
+        let maybe_i = self.context.type_of(i).unwrap_or(&Base(Unknown));
+        let typeof_i = unwrap_partial(maybe_i).ok_or(TypeError::PartialType(i, maybe_i.clone()))?;
+        let maybe_i = maybe_i.clone();
+        self.context.exit();
+        Ok((
+            Expr::Lambda(i, typeof_i, Box::new(er)),
+            Function(Box::new(maybe_i), Box::new(et)),
+        ))
     }
 
     fn expr(&mut self, expr: Expr<Ident, ()>) -> Result<(Expr<Ident, Type>, MaybeType), TypeError> {
