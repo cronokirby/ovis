@@ -235,7 +235,8 @@ impl Typer {
 /// Of course, this can potentially fail, in which case we'll return an error describing
 /// the kind of error that occurred.
 pub fn typer(untyped: AST<Ident, ()>) -> Result<AST<Ident, Type>, TypeError> {
-    Err(TypeError::Unknown)
+    let mut typer = Typer::new();
+    typer.run(untyped)
 }
 
 #[cfg(test)]
