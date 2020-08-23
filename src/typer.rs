@@ -309,17 +309,24 @@ impl Typer {
     fn lambda(
         &mut self,
         i: Ident,
+        typ: Option<TypeExpr>,
         e: Expr<Ident, ()>,
     ) -> TypeResult<(Expr<Ident, Type>, MaybeType)> {
+        let i_declared = typ
+            .clone()
+            .map(|x| parse_type_expr(&x))
+            .unwrap_or(Base(Unknown));
         self.context.enter();
         self.context.introduce(i);
+        self.context.assign(i, i_declared)?;
         let (er, et) = self.expr(e)?;
-        let maybe_i = self.context.type_of(i).unwrap_or(&Base(Unknown));
+        // We've assigned it a type, so we can unwrap
+        let maybe_i = self.context.type_of(i).unwrap();
         let typeof_i = unwrap_partial(maybe_i).ok_or(TypeError::PartialType(i, maybe_i.clone()))?;
         let maybe_i = maybe_i.clone();
         self.context.exit();
         Ok((
-            Expr::Lambda(i, typeof_i, Box::new(er)),
+            Expr::Lambda(i, typ, typeof_i, Box::new(er)),
             Function(Box::new(maybe_i), Box::new(et)),
         ))
     }
@@ -389,7 +396,7 @@ impl Typer {
                 Ok((Expr::Negate(Box::new(r)), Base(Known(I64))))
             }
             Expr::Apply(f, e) => self.apply(*f, *e),
-            Expr::Lambda(i, _, e) => self.lambda(i, *e),
+            Expr::Lambda(i, typ, _, e) => self.lambda(i, typ, *e),
             Expr::Let(defs, expr) => self.handle_let(defs, *expr),
         }
     }
