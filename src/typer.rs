@@ -236,14 +236,14 @@ impl Context {
     /// Precisely, it will panic whenever we're not able to find the variable in some scope above us.
     ///
     /// It will also fail if we try to assign a type that's incompatible with the current type we have
-    fn assign(&mut self, ident: Ident, typ: MaybeType) -> Result<(), TypeError> {
+    fn assign(&mut self, ident: Ident, typ: MaybeType) -> Result<MaybeType, TypeError> {
         for scope in self.scopes.iter_mut().rev() {
             if let Some(v) = scope.get_mut(&ident) {
                 return match specialize(v, &typ) {
                     None => Err(TypeError::ConflictingTypes(ident, v.clone(), typ)),
                     Some(t) => {
-                        *v = t;
-                        Ok(())
+                        *v = t.clone();
+                        Ok(t)
                     }
                 };
             }
@@ -311,6 +311,45 @@ impl Typer {
         ))
     }
 
+    fn definitions(
+        &mut self,
+        defs: Vec<Definition<Ident, ()>>,
+    ) -> Result<Vec<Definition<Ident, Type>>, TypeError> {
+        let mut new_defs: Vec<Definition<Ident, Type>> = Vec::new();
+        for d in defs {
+            match d {
+                Definition::Type(i, t) => {
+                    self.context.introduce(i);
+                    self.context.assign(i, parse_type_expr(&t))?;
+                }
+                Definition::Val(i, _, e) => {
+                    // Reintroduction does nothing if we've already introduced this value
+                    self.context.introduce(i);
+                    let (re, rt) = self.expr(e)?;
+                    let rt = self.context.assign(i, rt)?;
+                    // If after specializing both the potential type signature, and the
+                    // inferred type for the expression body, we have a partial type,
+                    // then that's a no-no
+                    let rt = unwrap_partial(&rt).ok_or(TypeError::PartialType(i, rt))?;
+                    new_defs.push(Definition::Val(i, rt, re))
+                }
+            }
+        }
+        Ok(new_defs)
+    }
+
+    fn handle_let(
+        &mut self,
+        defs: Vec<Definition<Ident, ()>>,
+        expr: Expr<Ident, ()>,
+    ) -> Result<(Expr<Ident, Type>, MaybeType), TypeError> {
+        self.context.enter();
+        let new_defs = self.definitions(defs)?;
+        let (re, rt) = self.expr(expr)?;
+        self.context.exit();
+        Ok((Expr::Let(new_defs, Box::new(re)), rt))
+    }
+
     fn expr(&mut self, expr: Expr<Ident, ()>) -> Result<(Expr<Ident, Type>, MaybeType), TypeError> {
         match expr {
             Expr::Name(n) => match self.context.type_of(n) {
@@ -337,22 +376,16 @@ impl Typer {
                 Ok((Expr::Negate(Box::new(r)), Base(Known(I64))))
             }
             Expr::Apply(f, e) => self.apply(*f, *e),
-            _ => unimplemented!(),
+            Expr::Lambda(i, _, e) => self.lambda(i, *e),
+            Expr::Let(defs, expr) => self.handle_let(defs, *expr),
         }
     }
 
     fn run(&mut self, untyped: AST<Ident, ()>) -> Result<AST<Ident, Type>, TypeError> {
-        // First, try and gather all the top level type annotations
-        for d in &untyped.definitions {
-            match d {
-                Definition::Val(_, _, _) => {}
-                Definition::Type(i, t) => {
-                    self.context.introduce(*i);
-                    self.context.assign(*i, parse_type_expr(t))?;
-                }
-            }
-        }
-        unimplemented!()
+        let new_defs = self.definitions(untyped.definitions)?;
+        Ok(AST {
+            definitions: new_defs,
+        })
     }
 }
 
