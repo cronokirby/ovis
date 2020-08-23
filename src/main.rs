@@ -18,7 +18,7 @@ enum CompileError {
     /// An error occurring while parsing
     ParseError(parser::ParseError),
     /// An error occurring while typing
-    TypeError(typer::TypeError<interner::Ident>),
+    TypeError(typer::TypeError<String>),
 }
 
 impl fmt::Display for CompileError {
@@ -61,8 +61,8 @@ impl From<parser::ParseError> for CompileError {
     }
 }
 
-impl From<typer::TypeError<interner::Ident>> for CompileError {
-    fn from(e: typer::TypeError<interner::Ident>) -> Self {
+impl From<typer::TypeError<String>> for CompileError {
+    fn from(e: typer::TypeError<String>) -> Self {
         CompileError::TypeError(e)
     }
 }
@@ -122,14 +122,15 @@ fn real_main(args: Args) -> Result<(), CompileError> {
         return Ok(());
     }
     let ast = parser::parse(&tokens)?;
-    let interned = interner::intern(ast);
+    let (interned_ast, dict) = interner::intern(ast);
     if args.stage <= Stage::Parse {
-        println!("Parse: {:?}", interned.dict.unintern(interned.ast));
+        println!("Parse: {:?}", dict.unintern(interned_ast));
         return Ok(());
     }
-    let typed = typer::typer(interned.ast)?;
+    let typed = typer::typer(interned_ast)
+        .map_err(|e| e.replace_idents(|i| dict.get(i).unwrap().to_string()))?;
     if args.stage <= Stage::Type {
-        println!("Typed: {:?}", interned.dict.unintern(typed));
+        println!("Typed: {:?}", dict.unintern(typed));
         return Ok(());
     }
     Ok(())

@@ -1,5 +1,5 @@
 use crate::ast::{Definition, Expr, TypeExpr, AST};
-use crate::interner::Ident;
+use crate::interner::{Dictionary, Ident};
 use std::collections::HashMap;
 
 use std::error::Error;
@@ -163,6 +163,17 @@ impl<I: Display + Debug> Error for TypeError<I> {
 }
 
 type TypeResult<T> = Result<T, TypeError<Ident>>;
+
+impl<I> TypeError<I> {
+    pub fn replace_idents<J, F: FnMut(I) -> J>(self, mut f: F) -> TypeError<J> {
+        match self {
+            TypeError::UndefinedName(i) => TypeError::UndefinedName(f(i)),
+            TypeError::Expected(t1, t2) => TypeError::Expected(t1, t2),
+            TypeError::ConflictingTypes(i, t1, t2) => TypeError::ConflictingTypes(f(i), t1, t2),
+            TypeError::PartialType(i, t) => TypeError::PartialType(f(i), t),
+        }
+    }
+}
 
 /// Expect to find a certain type, and report an error if we can't specialize to that type
 fn expect_type(expected: MaybeType, actual: MaybeType) -> TypeResult<MaybeType> {

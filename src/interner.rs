@@ -45,7 +45,8 @@ impl Dictionary {
         self.map.insert(ident, name);
     }
 
-    fn get(&self, ident: Ident) -> Option<&str> {
+    /// Try and get the string corresponding to an identifier
+    pub fn get(&self, ident: Ident) -> Option<&str> {
         // I wonder if we can avoid the map here
         self.map.get(&ident).map(|t| t.as_ref())
     }
@@ -54,21 +55,6 @@ impl Dictionary {
     pub fn unintern<T>(&self, ast: AST<Ident, T>) -> AST<String, T> {
         ast.replace_idents(|i| self.get(i).unwrap().to_string())
     }
-}
-
-/// Represents an AST where all of the string based identifier have been interned
-///
-/// This means that they've been replaced with unique numeric identifiers, allowing
-/// us to save a lot of space.
-///
-/// We also have a dictionary for the reverse mapping, in order to still be able
-/// to present variable as strings afterwards.
-#[derive(Debug)]
-pub struct InternedAST {
-    /// The dictionary mapping identifiers back to strings
-    pub dict: Dictionary,
-    /// The AST itself, now using identifiers instead of strings like after parsing
-    pub ast: AST<Ident>,
 }
 
 /// Represents a bidirectional mapping
@@ -110,11 +96,8 @@ impl Interner {
 }
 
 /// Intern an AST, by replacing all of the strings with unique identifiers
-pub fn intern(ast: AST<String>) -> InternedAST {
+pub fn intern(ast: AST<String>) -> (AST<Ident>, Dictionary) {
     let mut interner = Interner::new();
     let ast = ast.replace_idents(|i| interner.ident(i));
-    InternedAST {
-        ast,
-        dict: interner.dict,
-    }
+    (ast, interner.dict)
 }
