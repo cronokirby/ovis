@@ -1,4 +1,4 @@
-use crate::ast::{Definition, Expr, AST};
+use crate::ast::AST;
 use std::collections::HashMap;
 use std::hash::Hash;
 

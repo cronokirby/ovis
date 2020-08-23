@@ -1,5 +1,5 @@
 use crate::ast::{Definition, Expr, TypeExpr, AST};
-use crate::interner::{Dictionary, Ident};
+use crate::interner::Ident;
 use std::collections::HashMap;
 
 use std::error::Error;
