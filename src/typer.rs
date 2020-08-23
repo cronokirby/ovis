@@ -160,8 +160,10 @@ impl Error for TypeError {
     }
 }
 
+type TypeResult<T> = Result<T, TypeError>;
+
 /// Expect to find a certain type, and report an error if we can't specialize to that type
-fn expect_type(expected: MaybeType, actual: MaybeType) -> Result<MaybeType, TypeError> {
+fn expect_type(expected: MaybeType, actual: MaybeType) -> TypeResult<MaybeType> {
     match specialize(&expected, &actual) {
         None => Err(TypeError::Expected(expected, actual)),
         Some(t) => Ok(t),
@@ -234,7 +236,7 @@ impl Context {
     /// Precisely, it will panic whenever we're not able to find the variable in some scope above us.
     ///
     /// It will also fail if we try to assign a type that's incompatible with the current type we have
-    fn assign(&mut self, ident: Ident, typ: MaybeType) -> Result<MaybeType, TypeError> {
+    fn assign(&mut self, ident: Ident, typ: MaybeType) -> TypeResult<MaybeType> {
         for scope in self.scopes.iter_mut().rev() {
             if let Some(v) = scope.get_mut(&ident) {
                 return match specialize(v, &typ) {
@@ -295,7 +297,7 @@ impl Typer {
         &mut self,
         i: Ident,
         e: Expr<Ident, ()>,
-    ) -> Result<(Expr<Ident, Type>, MaybeType), TypeError> {
+    ) -> TypeResult<(Expr<Ident, Type>, MaybeType)> {
         self.context.enter();
         self.context.introduce(i);
         let (er, et) = self.expr(e)?;
@@ -312,7 +314,7 @@ impl Typer {
     fn definitions(
         &mut self,
         defs: Vec<Definition<Ident, ()>>,
-    ) -> Result<Vec<Definition<Ident, Type>>, TypeError> {
+    ) -> TypeResult<Vec<Definition<Ident, Type>>> {
         let mut new_defs: Vec<Definition<Ident, Type>> = Vec::new();
         for d in defs {
             match d {
@@ -340,7 +342,7 @@ impl Typer {
         &mut self,
         defs: Vec<Definition<Ident, ()>>,
         expr: Expr<Ident, ()>,
-    ) -> Result<(Expr<Ident, Type>, MaybeType), TypeError> {
+    ) -> TypeResult<(Expr<Ident, Type>, MaybeType)> {
         self.context.enter();
         let new_defs = self.definitions(defs)?;
         let (re, rt) = self.expr(expr)?;
@@ -348,7 +350,7 @@ impl Typer {
         Ok((Expr::Let(new_defs, Box::new(re)), rt))
     }
 
-    fn expr(&mut self, expr: Expr<Ident, ()>) -> Result<(Expr<Ident, Type>, MaybeType), TypeError> {
+    fn expr(&mut self, expr: Expr<Ident, ()>) -> TypeResult<(Expr<Ident, Type>, MaybeType)> {
         match expr {
             Expr::Name(n) => match self.context.type_of(n) {
                 None => Err(TypeError::UndefinedName(n)),
@@ -379,7 +381,7 @@ impl Typer {
         }
     }
 
-    fn run(&mut self, untyped: AST<Ident, ()>) -> Result<AST<Ident, Type>, TypeError> {
+    fn run(&mut self, untyped: AST<Ident, ()>) -> TypeResult<AST<Ident, Type>> {
         let new_defs = self.definitions(untyped.definitions)?;
         Ok(AST {
             definitions: new_defs,
@@ -391,7 +393,7 @@ impl Typer {
 ///
 /// Of course, this can potentially fail, in which case we'll return an error describing
 /// the kind of error that occurred.
-pub fn typer(untyped: AST<Ident, ()>) -> Result<AST<Ident, Type>, TypeError> {
+pub fn typer(untyped: AST<Ident, ()>) -> TypeResult<AST<Ident, Type>> {
     let mut typer = Typer::new();
     typer.run(untyped)
 }
