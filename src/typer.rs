@@ -3,7 +3,7 @@ use crate::interner::Ident;
 use std::collections::HashMap;
 
 use std::error::Error;
-use std::fmt::{Display, Formatter, Result as FmtResult};
+use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 
 /// Represents a base type in our language
 ///
@@ -132,35 +132,37 @@ fn parse_type_expr(expr: &TypeExpr) -> MaybeType {
 
 /// This represents the errors that can occurr will assigning types to the program tree
 #[derive(Clone, Debug, PartialEq)]
-pub enum TypeError {
-    UndefinedName(Ident),
+pub enum TypeError<I> {
+    UndefinedName(I),
     Expected(MaybeType, MaybeType),
-    PartialType(Ident, MaybeType),
-    ConflictingTypes(Ident, MaybeType, MaybeType),
+    PartialType(I, MaybeType),
+    ConflictingTypes(I, MaybeType, MaybeType),
 }
 
-impl Display for TypeError {
+impl<I: Display> Display for TypeError<I> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
-            TypeError::UndefinedName(i) => write!(f, "Undefined identifier {:?}", i),
+            TypeError::UndefinedName(i) => write!(f, "Identifier {} is undefined", i),
             TypeError::Expected(t1, t2) => write!(f, "Expected {}, found {}", t1, t2),
-            TypeError::ConflictingTypes(i, t1, t2) => {
-                write!(f, "Conflicting types for {:?}, {}, and {}", i, t1, t2)
-            }
+            TypeError::ConflictingTypes(i, t1, t2) => write!(
+                f,
+                "Identifier {} has conflicting types {} and {}",
+                i, t1, t2
+            ),
             TypeError::PartialType(i, t) => {
-                write!(f, "For {:?}, only able to infer partial type {}", i, t)
+                write!(f, "Identifier {} only reached partial type {}", i, t)
             }
         }
     }
 }
 
-impl Error for TypeError {
+impl<I: Display + Debug> Error for TypeError<I> {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         None
     }
 }
 
-type TypeResult<T> = Result<T, TypeError>;
+type TypeResult<T> = Result<T, TypeError<Ident>>;
 
 /// Expect to find a certain type, and report an error if we can't specialize to that type
 fn expect_type(expected: MaybeType, actual: MaybeType) -> TypeResult<MaybeType> {
@@ -280,7 +282,7 @@ impl Typer {
         &mut self,
         f: Expr<Ident, ()>,
         e: Expr<Ident, ()>,
-    ) -> Result<(Expr<Ident, Type>, MaybeType), TypeError> {
+    ) -> TypeResult<(Expr<Ident, Type>, MaybeType)> {
         let (fr, ft) = self.expr(f)?;
         let (er, et) = self.expr(e)?;
         // We expect the function type to conform with the argument type

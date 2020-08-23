@@ -18,7 +18,7 @@ enum CompileError {
     /// An error occurring while parsing
     ParseError(parser::ParseError),
     /// An error occurring while typing
-    TypeError(typer::TypeError),
+    TypeError(typer::TypeError<interner::Ident>),
 }
 
 impl fmt::Display for CompileError {
@@ -61,8 +61,8 @@ impl From<parser::ParseError> for CompileError {
     }
 }
 
-impl From<typer::TypeError> for CompileError {
-    fn from(e: typer::TypeError) -> Self {
+impl From<typer::TypeError<interner::Ident>> for CompileError {
+    fn from(e: typer::TypeError<interner::Ident>) -> Self {
         CompileError::TypeError(e)
     }
 }
