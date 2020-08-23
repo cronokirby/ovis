@@ -45,10 +45,14 @@ impl Dictionary {
         self.map.insert(ident, name);
     }
 
-    /// Retreive the string connected to a given identifier, if it exists
-    pub fn get(&self, ident: Ident) -> Option<&str> {
+    fn get(&self, ident: Ident) -> Option<&str> {
         // I wonder if we can avoid the map here
         self.map.get(&ident).map(|t| t.as_ref())
+    }
+
+    /// Replace all instances of identifiers with the corresponding strings
+    pub fn unintern<T>(&self, ast: AST<Ident, T>) -> AST<String, T> {
+        ast.replace_idents(|i| self.get(i).unwrap().to_string())
     }
 }
 
@@ -103,52 +107,12 @@ impl Interner {
             None => self.insert(v),
         }
     }
-
-    fn ast(&mut self, ast: AST<String>) -> AST<Ident> {
-        AST {
-            definitions: self.definitions(ast.definitions),
-        }
-    }
-
-    fn definitions<T>(
-        &mut self,
-        definitions: Vec<Definition<String, T>>,
-    ) -> Vec<Definition<Ident, T>> {
-        definitions
-            .into_iter()
-            .map(|x| self.definition(x))
-            .collect()
-    }
-
-    fn definition<T>(&mut self, ast: Definition<String, T>) -> Definition<Ident, T> {
-        match ast {
-            Definition::Type(name, e) => Definition::Type(self.ident(name), e),
-            Definition::Val(name, t, e) => Definition::Val(self.ident(name), t, self.expr(e)),
-        }
-    }
-
-    fn expr<T>(&mut self, ast: Expr<String, T>) -> Expr<Ident, T> {
-        match ast {
-            Expr::Lambda(name, t, e) => Expr::Lambda(self.ident(name), t, Box::new(self.expr(*e))),
-            Expr::Let(definitions, e) => {
-                Expr::Let(self.definitions(definitions), Box::new(self.expr(*e)))
-            }
-            Expr::Name(name) => Expr::Name(self.ident(name)),
-            Expr::Binary(op, l, r) => {
-                Expr::Binary(op, Box::new(self.expr(*l)), Box::new(self.expr(*r)))
-            }
-            Expr::Negate(e) => Expr::Negate(Box::new(self.expr(*e))),
-            Expr::Apply(f, e) => Expr::Apply(Box::new(self.expr(*f)), Box::new(self.expr(*e))),
-            Expr::NumberLitt(n) => Expr::NumberLitt(n),
-            Expr::StringLitt(s) => Expr::StringLitt(s),
-        }
-    }
 }
 
 /// Intern an AST, by replacing all of the strings with unique identifiers
 pub fn intern(ast: AST<String>) -> InternedAST {
     let mut interner = Interner::new();
-    let ast = interner.ast(ast);
+    let ast = ast.replace_idents(|i| interner.ident(i));
     InternedAST {
         ast,
         dict: interner.dict,

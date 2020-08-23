@@ -33,6 +33,31 @@ pub enum Expr<I, T> {
     Apply(Box<Expr<I, T>>, Box<Expr<I, T>>),
 }
 
+impl<I, T> Expr<I, T> {
+    fn replace_idents<J, F: FnMut(I) -> J>(self, f: &mut F) -> Expr<J, T> {
+        match self {
+            Expr::Lambda(i, t, e) => Expr::Lambda(f(i), t, Box::new(e.replace_idents(f))),
+            Expr::Let(defs, e) => Expr::Let(
+                defs.into_iter().map(|d| d.replace_idents(f)).collect(),
+                Box::new(e.replace_idents(f)),
+            ),
+            Expr::Name(i) => Expr::Name(f(i)),
+            Expr::NumberLitt(n) => Expr::NumberLitt(n),
+            Expr::StringLitt(s) => Expr::StringLitt(s),
+            Expr::Binary(op, e1, e2) => Expr::Binary(
+                op,
+                Box::new(e1.replace_idents(f)),
+                Box::new(e2.replace_idents(f)),
+            ),
+            Expr::Negate(e) => Expr::Negate(Box::new(e.replace_idents(f))),
+            Expr::Apply(ef, e) => Expr::Apply(
+                Box::new(ef.replace_idents(f)),
+                Box::new(e.replace_idents(f)),
+            ),
+        }
+    }
+}
+
 /// Represents a type, formed through primitive types, or composition of other types
 #[derive(Debug, PartialEq)]
 pub enum TypeExpr {
@@ -56,6 +81,15 @@ pub enum Definition<I, T> {
     Val(I, T, Expr<I, T>),
 }
 
+impl<I, T> Definition<I, T> {
+    fn replace_idents<J, F: FnMut(I) -> J>(self, f: &mut F) -> Definition<J, T> {
+        match self {
+            Definition::Type(i, t) => Definition::Type(f(i), t),
+            Definition::Val(i, t, e) => Definition::Val(f(i), t, e.replace_idents(f)),
+        }
+    }
+}
+
 /// Represents a program in our language.
 ///
 /// This is parametrized over the type of identifiers
@@ -64,4 +98,16 @@ pub enum Definition<I, T> {
 #[derive(Debug, PartialEq)]
 pub struct AST<I, T = ()> {
     pub definitions: Vec<Definition<I, T>>,
+}
+
+impl<I, T> AST<I, T> {
+    pub fn replace_idents<J, F: FnMut(I) -> J>(self, mut f: F) -> AST<J, T> {
+        AST {
+            definitions: self
+                .definitions
+                .into_iter()
+                .map(|d| d.replace_idents(&mut f))
+                .collect(),
+        }
+    }
 }

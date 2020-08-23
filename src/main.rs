@@ -124,12 +124,12 @@ fn real_main(args: Args) -> Result<(), CompileError> {
     let ast = parser::parse(&tokens)?;
     let interned = interner::intern(ast);
     if args.stage <= Stage::Parse {
-        println!("Parse: {:?}", interned);
+        println!("Parse: {:?}", interned.dict.unintern(interned.ast));
         return Ok(());
     }
     let typed = typer::typer(interned.ast)?;
     if args.stage <= Stage::Type {
-        println!("Typed: {:?}", typed);
+        println!("Typed: {:?}", interned.dict.unintern(typed));
         return Ok(());
     }
     Ok(())
