@@ -66,7 +66,7 @@ pub type Type = TypeStructure<BaseType>;
 /// in arbitrary locations, until we know nothing more can be learned about some
 /// expression, forcing us to provide an unambiguous type.
 #[derive(Copy, Clone, Debug, PartialEq)]
-enum MaybeBase {
+pub enum MaybeBase {
     Unknown,
     Known(BaseType),
 }
@@ -83,7 +83,7 @@ impl Display for MaybeBase {
 }
 
 /// A full set of types, where the basic types can potentially include the absence of knowledge.
-type MaybeType = TypeStructure<MaybeBase>;
+pub type MaybeType = TypeStructure<MaybeBase>;
 
 /// Try and find the most specialized version of two types
 fn specialize(t1: &MaybeType, t2: &MaybeType) -> Option<MaybeType> {
@@ -137,7 +137,6 @@ pub enum TypeError {
     Expected(MaybeType, MaybeType),
     PartialType(Ident, MaybeType),
     ConflictingTypes(Ident, MaybeType, MaybeType),
-    Unknown,
 }
 
 impl Display for TypeError {
@@ -151,7 +150,6 @@ impl Display for TypeError {
             TypeError::PartialType(i, t) => {
                 write!(f, "For {:?}, only able to infer partial type {}", i, t)
             }
-            TypeError::Unknown => write!(f, "Unknown Type Error"),
         }
     }
 }
