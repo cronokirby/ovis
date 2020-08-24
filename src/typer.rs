@@ -57,6 +57,15 @@ impl<T: Display> Display for TypeStructure<T> {
     }
 }
 
+impl<T> TypeStructure<T> {
+    fn as_function(&self) -> Option<(&TypeStructure<T>, &TypeStructure<T>)> {
+        match self {
+            Base(_) => None,
+            Function(f, a) => Some((f, a)),
+        }
+    }
+}
+
 /// Represents a fully evaluated type for some expression
 pub type Type = TypeStructure<BaseType>;
 
@@ -86,7 +95,10 @@ impl Display for MaybeBase {
 pub type MaybeType = TypeStructure<MaybeBase>;
 
 /// Try and find the most specialized version of two types
-fn specialize(t1: &MaybeType, t2: &MaybeType) -> Option<MaybeType> {
+///
+/// This will fail if the two types cannot be unified, because they have conflicting
+/// information.
+fn unify(t1: &MaybeType, t2: &MaybeType) -> Option<MaybeType> {
     match (t1, t2) {
         (Base(Known(t1)), Base(Known(t2))) => {
             if t1 != t2 {
@@ -100,8 +112,8 @@ fn specialize(t1: &MaybeType, t2: &MaybeType) -> Option<MaybeType> {
         (Function(_, _), Base(_)) => None,
         (Base(_), Function(_, _)) => None,
         (Function(f1, a1), Function(f2, a2)) => {
-            let s1 = specialize(f1, f2)?;
-            let s2 = specialize(a1, a2)?;
+            let s1 = unify(f1, f2)?;
+            let s2 = unify(a1, a2)?;
             Some(Function(Box::new(s1), Box::new(s2)))
         }
     }
@@ -176,9 +188,9 @@ impl<I> TypeError<I> {
 }
 
 /// Expect to find a certain type, and report an error if we can't specialize to that type
-fn expect_type(expected: MaybeType, actual: MaybeType) -> TypeResult<MaybeType> {
-    match specialize(&expected, &actual) {
-        None => Err(TypeError::Expected(expected, actual)),
+fn try_unify(expected: &MaybeType, actual: &MaybeType) -> TypeResult<MaybeType> {
+    match unify(expected, actual) {
+        None => Err(TypeError::Expected(expected.clone(), actual.clone())),
         Some(t) => Ok(t),
     }
 }
@@ -252,7 +264,7 @@ impl Context {
     fn assign(&mut self, ident: Ident, typ: MaybeType) -> TypeResult<MaybeType> {
         for scope in self.scopes.iter_mut().rev() {
             if let Some(v) = scope.get_mut(&ident) {
-                return match specialize(v, &typ) {
+                return match unify(v, &typ) {
                     None => Err(TypeError::ConflictingTypes(ident, v.clone(), typ)),
                     Some(t) => {
                         *v = t.clone();
@@ -291,44 +303,58 @@ impl Typer {
 
     fn apply(
         &mut self,
+        expected: MaybeType,
         f: Expr<Ident, ()>,
         e: Expr<Ident, ()>,
     ) -> TypeResult<(Expr<Ident, Type>, MaybeType)> {
-        let (fr, ft) = self.expr(f)?;
-        let (er, et) = self.expr(e)?;
-        // We expect the function type to conform with the argument type
-        let ft = expect_type(Function(Box::new(et), Box::new(Base(Unknown))), ft)?;
+        // We want to try and infer the type of the argument first
+        let (er, et) = self.expr(Base(Unknown), e)?;
+        let (fr, ft) = self.expr(Function(Box::new(et), Box::new(expected.clone())), f)?;
         // And the final type for this expression is whatever we've managed to infer for the return type
-        let result_type = match ft {
-            Function(_, rt) => *rt,
-            _ => panic!("Unthinkable: specialized function type is not function type"),
-        };
+        let (_, result_type) = ft
+            .as_function()
+            .expect("Unthinkable: specialized function type is not function type");
+        let result_type = try_unify(&expected, result_type)?;
         Ok((Expr::Apply(Box::new(fr), Box::new(er)), result_type))
     }
 
     fn lambda(
         &mut self,
+        expected: MaybeType,
         i: Ident,
         typ: Option<TypeExpr>,
         e: Expr<Ident, ()>,
     ) -> TypeResult<(Expr<Ident, Type>, MaybeType)> {
+        // First we already know that we're going to end up with a lambda,
+        // so we can go ahead and unify that information with the expected type, and catch
+        // things like 3 + \x -> ... early
+        let expected_function = try_unify(
+            &expected,
+            &Function(Box::new(Base(Unknown)), Box::new(Base(Unknown))),
+        )?;
+        let (expected_input, expected_output) = expected_function
+            .as_function()
+            .expect("Unthinkable: specialized function type is not function type");
         let i_declared = typ
             .clone()
             .map(|x| parse_type_expr(&x))
             .unwrap_or(Base(Unknown));
         self.context.enter();
         self.context.introduce(i);
+        // Now we can try and assign the declared type and the expected input together
         self.context.assign(i, i_declared)?;
-        let (er, et) = self.expr(e)?;
+        self.context.assign(i, expected_input.clone())?;
+        let (er, et) = self.expr(expected_output.clone(), e)?;
         // We've assigned it a type, so we can unwrap
         let maybe_i = self.context.type_of(i).unwrap();
         let typeof_i = unwrap_partial(maybe_i).ok_or(TypeError::PartialType(i, maybe_i.clone()))?;
         let maybe_i = maybe_i.clone();
         self.context.exit();
-        Ok((
-            Expr::Lambda(i, typ, typeof_i, Box::new(er)),
-            Function(Box::new(maybe_i), Box::new(et)),
-        ))
+        let result_type = try_unify(
+            &expected_function,
+            &Function(Box::new(maybe_i), Box::new(et)),
+        )?;
+        Ok((Expr::Lambda(i, typ, typeof_i, Box::new(er)), result_type))
     }
 
     fn definitions(
@@ -345,7 +371,8 @@ impl Typer {
                 Definition::Val(i, _, e) => {
                     // Reintroduction does nothing if we've already introduced this value
                     self.context.introduce(i);
-                    let (re, rt) = self.expr(e)?;
+                    // We expect to get whatever type we know of so far, or a unified version of it
+                    let (re, rt) = self.expr(self.context.type_of(i).unwrap().clone(), e)?;
                     let rt = self.context.assign(i, rt)?;
                     // If after specializing both the potential type signature, and the
                     // inferred type for the expression body, we have a partial type,
@@ -360,44 +387,55 @@ impl Typer {
 
     fn handle_let(
         &mut self,
+        expected: MaybeType,
         defs: Vec<Definition<Ident, ()>>,
         expr: Expr<Ident, ()>,
     ) -> TypeResult<(Expr<Ident, Type>, MaybeType)> {
         self.context.enter();
         let new_defs = self.definitions(defs)?;
-        let (re, rt) = self.expr(expr)?;
+        let (re, rt) = self.expr(expected.clone(), expr)?;
         self.context.exit();
+        let rt = try_unify(&expected, &rt)?;
         Ok((Expr::Let(new_defs, Box::new(re)), rt))
     }
 
-    fn expr(&mut self, expr: Expr<Ident, ()>) -> TypeResult<(Expr<Ident, Type>, MaybeType)> {
+    fn expr(
+        &mut self,
+        expected: MaybeType,
+        expr: Expr<Ident, ()>,
+    ) -> TypeResult<(Expr<Ident, Type>, MaybeType)> {
         match expr {
             Expr::Name(n) => match self.context.type_of(n) {
                 None => Err(TypeError::UndefinedName(n)),
-                Some(typ) => Ok((Expr::Name(n), typ.clone())),
+                Some(_) => {
+                    // We push down the expected type to the value, and
+                    // then the result of the expression is the new unified type
+                    let t = self.context.assign(n, expected)?;
+                    Ok((Expr::Name(n), t))
+                }
             },
-            Expr::NumberLitt(n) => Ok((Expr::NumberLitt(n), Base(Known(I64)))),
-            Expr::StringLitt(s) => Ok((Expr::StringLitt(s), Base(Known(Strng)))),
+            Expr::NumberLitt(n) => {
+                let t = try_unify(&expected, &Base(Known(I64)))?;
+                Ok((Expr::NumberLitt(n), t))
+            }
+            Expr::StringLitt(s) => {
+                let t = try_unify(&expected, &Base(Known(Strng)))?;
+                Ok((Expr::StringLitt(s), t))
+            }
             Expr::Binary(op, e1, e2) => {
-                let (r1, t1) = self.expr(*e1)?;
-                expect_type(Base(Known(I64)), t1)?;
-                let (r2, t2) = self.expr(*e2)?;
-                expect_type(Base(Known(I64)), t2)?;
-                // We know that the result of a binary expression is always an integer
-                Ok((
-                    Expr::Binary(op, Box::new(r1), Box::new(r2)),
-                    Base(Known(I64)),
-                ))
+                let (r1, _) = self.expr(Base(Known(I64)), *e1)?;
+                let (r2, _) = self.expr(Base(Known(I64)), *e2)?;
+                let t = try_unify(&expected, &Base(Known(I64)))?;
+                Ok((Expr::Binary(op, Box::new(r1), Box::new(r2)), t))
             }
             Expr::Negate(e) => {
-                let (r, t) = self.expr(*e)?;
-                expect_type(Base(Known(I64)), t)?;
-
-                Ok((Expr::Negate(Box::new(r)), Base(Known(I64))))
+                let (r, _) = self.expr(Base(Known(I64)), *e)?;
+                let t = try_unify(&expected, &Base(Known(I64)))?;
+                Ok((Expr::Negate(Box::new(r)), t))
             }
-            Expr::Apply(f, e) => self.apply(*f, *e),
-            Expr::Lambda(i, typ, _, e) => self.lambda(i, typ, *e),
-            Expr::Let(defs, expr) => self.handle_let(defs, *expr),
+            Expr::Apply(f, e) => self.apply(expected, *f, *e),
+            Expr::Lambda(i, typ, _, e) => self.lambda(expected, i, typ, *e),
+            Expr::Let(defs, expr) => self.handle_let(expected, defs, *expr),
         }
     }
 
