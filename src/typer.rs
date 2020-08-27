@@ -460,6 +460,23 @@ pub fn typer(untyped: AST<Ident, ()>) -> TypeResult<AST<Ident, Type>> {
 mod test {
     use super::*;
 
+    macro_rules! assert_types {
+        ($input:expr) => {{
+            use crate::{interner, lexer, parser};
+            let tokens = lexer::lex($input).unwrap();
+            let ast = parser::parse(&tokens).unwrap();
+            let (interned_ast, dict) = interner::intern(ast);
+            let res = typer(interned_ast)
+                .map_err(|e| e.replace_idents(|i| dict.get(i).unwrap().to_string()));
+            assert!(
+                res.is_ok(),
+                "`{}` failed to type check: {}",
+                $input,
+                res.unwrap_err()
+            );
+        }};
+    }
+
     #[test]
     fn types_display_correctly() {
         assert_eq!("I64", format!("{}", I64));
@@ -484,6 +501,40 @@ mod test {
                 "{}",
                 Function(Box::new(Base(Unknown)), Box::new(Base(Known(I64))))
             )
+        );
+    }
+
+    #[test]
+    fn basic_programs_type_check() {
+        assert_types!("x : I64; x = 3");
+        assert_types!(r#"x : String; x = "foo" "#);
+        assert_types!(r#"f : I64 -> I64; f = \x -> x"#);
+        assert_types!(r#"f : I64 -> I64 -> I64; f = \x -> \y -> y"#);
+        assert_types!(r#"f : (I64 -> String) -> I64 -> String; f = \g -> \x -> g x"#);
+        assert_types!(r#"f : (I64 -> I64) -> (I64 -> I64); f = \g -> g"#)
+    }
+
+    #[test]
+    fn litterals_can_be_inferred() {
+        assert_types!("x = 3");
+        assert_types!(r#"x = "foo""#);
+    }
+
+    #[test]
+    fn function_types_can_be_inferred_by_use() {
+        assert_types!(r#"f = \x -> x + 2"#);
+    }
+
+    #[test]
+    fn we_can_type_let() {
+        assert_types!(
+            r#"
+        x =
+          let
+            f = \x -> x + 2
+            b = 3
+          in f b
+        "#
         );
     }
 }
