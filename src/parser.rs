@@ -3,13 +3,39 @@ use std::fmt;
 
 use peg;
 
-use crate::ast;
+use crate::ast::{BinOp, TypeExpr};
 use crate::lexer::Token;
-use ast::{BinOp, TypeExpr};
 
-type Expr = ast::Expr<String, ()>;
-type Definition = ast::Definition<String, ()>;
-type AST = ast::AST<String>;
+/// Represents the results of parsing out an expression
+#[derive(Debug, PartialEq)]
+pub enum Expr {
+    /// A lambda introducing a single name, potentially
+    /// with a type annotation, and having a body as another expression
+    Lambda(String, Option<TypeExpr>, Box<Expr>),
+    /// A let expression, with multiple definitions before
+    /// a final expression using those definitions
+    Let(Vec<Definition>, Box<Expr>),
+    Name(String),
+    NumberLitt(i64),
+    StringLitt(String),
+    Binary(BinOp, Box<Expr>, Box<Expr>),
+    Negate(Box<Expr>),
+    Apply(Box<Expr>, Box<Expr>),
+}
+
+/// Represents the parse result of some definition
+#[derive(Debug, PartialEq)]
+pub enum Definition {
+    /// A definition assigning some type to some identifier
+    Type(String, TypeExpr),
+    /// A definition assigning some expression to some identifier
+    Val(String, Expr),
+}
+
+#[derive(Debug, PartialEq)]
+pub struct AST {
+    pub definitions: Vec<Definition>,
+}
 
 peg::parser! {
     grammar ast_parser() for [Token] {
@@ -43,7 +69,7 @@ peg::parser! {
             / n:name() { (n, None) }
 
         rule lambda_expr() -> Expr
-            = [BSlash] nt:lambda_name() [RightArrow] e:expr() { Expr::Lambda(nt.0, nt.1, (), Box::new(e)) }
+            = [BSlash] nt:lambda_name() [RightArrow] e:expr() { Expr::Lambda(nt.0, nt.1,  Box::new(e)) }
 
         rule let_expr() -> Expr
             = [Let] [LeftBrace] ds:(definition() ** [Semicolon]) [RightBrace] [In] e:expr() { Expr::Let(ds, Box::new(e)) }
@@ -73,7 +99,7 @@ peg::parser! {
 
 
         rule definition() -> Definition
-            = n:name() [Equal] e:expr() { Definition::Val(n, (), e) }
+            = n:name() [Equal] e:expr() { Definition::Val(n, e) }
             / n:name() [Colon] t:typ() { Definition::Type(n, t) }
 
         pub rule ast() -> AST = [LeftBrace] ds:(definition() ** [Semicolon]) [RightBrace] { AST { definitions: ds } }
@@ -141,7 +167,7 @@ mod test {
     macro_rules! val_def {
         ($x:expr, $e:expr) => {
             AST {
-                definitions: vec![Definition::Val($x.into(), (), $e)],
+                definitions: vec![Definition::Val($x.into(), $e)],
             }
         };
     }
@@ -214,7 +240,7 @@ mod test {
             r#"x = \y -> 2"#,
             val_def!(
                 "x",
-                Expr::Lambda("y".into(), None, (), Box::new(Expr::NumberLitt(2)))
+                Expr::Lambda("y".into(), None, Box::new(Expr::NumberLitt(2)))
             )
         );
         assert_parse!(
@@ -224,11 +250,9 @@ mod test {
                 Expr::Lambda(
                     "a".into(),
                     None,
-                    (),
                     Box::new(Expr::Lambda(
                         "b".into(),
                         None,
-                        (),
                         Box::new(Expr::NumberLitt(2))
                     ))
                 )
@@ -245,7 +269,6 @@ mod test {
                 Expr::Lambda(
                     "y".into(),
                     Some(TypeExpr::I64),
-                    (),
                     Box::new(Expr::NumberLitt(2))
                 )
             )
@@ -259,7 +282,7 @@ mod test {
             AST {
                 definitions: vec![
                     Definition::Type("x".into(), TypeExpr::Strng),
-                    Definition::Val("x".into(), (), Expr::StringLitt("foo".into()))
+                    Definition::Val("x".into(), Expr::StringLitt("foo".into()))
                 ]
             }
         )
@@ -304,8 +327,8 @@ mod test {
             "x = 3;y = 5",
             AST {
                 definitions: vec![
-                    Definition::Val("x".into(), (), Expr::NumberLitt(3)),
-                    Definition::Val("y".into(), (), Expr::NumberLitt(5))
+                    Definition::Val("x".into(), Expr::NumberLitt(3)),
+                    Definition::Val("y".into(), Expr::NumberLitt(5))
                 ]
             }
         )
@@ -319,8 +342,8 @@ mod test {
                 "x",
                 Expr::Let(
                     vec![
-                        Definition::Val("y".into(), (), Expr::NumberLitt(2)),
-                        Definition::Val("z".into(), (), Expr::NumberLitt(3))
+                        Definition::Val("y".into(), Expr::NumberLitt(2)),
+                        Definition::Val("z".into(), Expr::NumberLitt(3))
                     ],
                     Box::new(Expr::NumberLitt(4))
                 )

@@ -462,10 +462,12 @@ mod test {
 
     macro_rules! assert_types {
         ($input:expr) => {{
+            use crate::simplifier;
             use crate::{interner, lexer, parser};
             let tokens = lexer::lex($input).unwrap();
             let ast = parser::parse(&tokens).unwrap();
-            let (interned_ast, dict) = interner::intern(ast);
+            let simplified = simplifier::simplify(ast);
+            let (interned_ast, dict) = interner::intern(simplified);
             let res = typer(interned_ast)
                 .map_err(|e| e.replace_idents(|i| dict.get(i).unwrap().to_string()));
             assert!(

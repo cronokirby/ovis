@@ -2,6 +2,7 @@ mod ast;
 mod interner;
 mod lexer;
 mod parser;
+mod simplifier;
 mod typer;
 
 use std::convert::TryFrom;
@@ -122,7 +123,8 @@ fn real_main(args: Args) -> Result<(), CompileError> {
         return Ok(());
     }
     let ast = parser::parse(&tokens)?;
-    let (interned_ast, dict) = interner::intern(ast);
+    let simplified = simplifier::simplify(ast);
+    let (interned_ast, dict) = interner::intern(simplified);
     if args.stage <= Stage::Parse {
         println!("Parse: {:?}", dict.unintern(interned_ast));
         return Ok(());
