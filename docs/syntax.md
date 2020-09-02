@@ -7,7 +7,7 @@ the programs that the compiler can parse.
 
 An **Ovis** program is composed of definitions. Definitions bind names to expressions
 
-```
+```ovis
 // x is just a constant
 x = 3
 
@@ -19,7 +19,7 @@ y = \x -> x + 2
 
 Top level definitions can also have *type annotations*, specifying what type a given expression is:
 
-```
+```ovis
 x : Int
 x = 3
 
@@ -33,13 +33,13 @@ The usual arithmetic expressions are supported.
 
 We can also define functions, through the lambda syntax:
 
-```
+```ovis
 \x -> x + 2
 ```
 
 Multiple arguments are possible through *currying*:
 
-```
+```ovis
 \x -> \y -> x + y
 ```
 
@@ -60,7 +60,7 @@ about details like avoiding left-recursion, and what-not. This is mainly to give
 of what the syntax rules look like. Concerns like associativity aren't really covered here.
 If you want to know *exactly* how the syntax is defined, it's best to read the source code.
 
-```
+```ovis
 program := definition (; definition)* | ""
 
 definition := expr_definition | type_annotation
