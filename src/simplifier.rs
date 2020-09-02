@@ -12,8 +12,12 @@ fn expr(e: parser::Expr) -> ast::Expr<String, ()> {
             ast::Expr::Binary(op, Box::new(expr(*e1)), Box::new(expr(*e2)))
         }
         parser::Expr::Apply(e1, e2) => ast::Expr::Apply(Box::new(expr(*e1)), Box::new(expr(*e2))),
-        parser::Expr::Lambda(n, type_expr, body) => {
-            ast::Expr::Lambda(n, type_expr, (), Box::new(expr(*body)))
+        parser::Expr::Lambda(bindings, body) => {
+            let mut seed = expr(*body);
+            for (name, type_expr) in bindings.into_iter().rev() {
+                seed = ast::Expr::Lambda(name, type_expr, (), Box::new(seed))
+            }
+            seed
         }
     }
 }

@@ -37,10 +37,23 @@ We can also define functions, through the lambda syntax:
 \x -> x + 2
 ```
 
-Multiple arguments are possible through *currying*:
+Multiple arguments are possible:
+
+```ovis
+\x y -> x + y
+```
+
+This is equivalent to using currying:
 
 ```ovis
 \x -> \y -> x + y
+```
+
+Type annotations on the bindings introduced are permitted, but must be wrapped
+in parentheses:
+
+```ovis
+\(f : I64 -> I64) y (z: I64) -> f y + f z
 ```
 
 # Tokenizer
@@ -69,8 +82,8 @@ expr_definition := name = expr
 
 expr := lambda_expr | arithmetic_expr
 
-lambda_name := name | type_annotation
-lambda_expr := \ lambda_name -> expr
+lambda_name := name | ( type_annotation )
+lambda_expr := \ lambda_name+ -> expr
 
 let_expr := let { definition (; definition)* } in expr
 

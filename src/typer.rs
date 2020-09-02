@@ -274,7 +274,7 @@ impl Context {
             }
         }
         panic!(
-            "Unthinkable: Tried to assign a type to {:?}, which is present in no scope",
+            "UNTHINKABLE: Tried to assign a type to {:?}, which is present in no scope",
             ident
         );
     }
@@ -313,7 +313,7 @@ impl Typer {
         // And the final type for this expression is whatever we've managed to infer for the return type
         let (_, result_type) = ft
             .as_function()
-            .expect("Unthinkable: specialized function type is not function type");
+            .expect("UNTHINKABLE: specialized function type is not function type");
         let result_type = try_unify(&expected, result_type)?;
         Ok((Expr::Apply(Box::new(fr), Box::new(er)), result_type))
     }
@@ -334,7 +334,7 @@ impl Typer {
         )?;
         let (expected_input, expected_output) = expected_function
             .as_function()
-            .expect("Unthinkable: specialized function type is not function type");
+            .expect("UNTHINKABLE: specialized function type is not function type");
         let i_declared = typ
             .clone()
             .map(|x| parse_type_expr(&x))
@@ -513,7 +513,8 @@ mod test {
         assert_types!(r#"f : I64 -> I64; f = \x -> x"#);
         assert_types!(r#"f : I64 -> I64 -> I64; f = \x -> \y -> y"#);
         assert_types!(r#"f : (I64 -> String) -> I64 -> String; f = \g -> \x -> g x"#);
-        assert_types!(r#"f : (I64 -> I64) -> (I64 -> I64); f = \g -> g"#)
+        assert_types!(r#"f : (I64 -> I64) -> (I64 -> I64); f = \g -> g"#);
+        assert_types!(r#"f : (I64 -> I64) -> I64 -> I64; f = \(g : I64 -> I64) x -> g x + g 2"#);
     }
 
     #[test]

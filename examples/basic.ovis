@@ -10,3 +10,6 @@ y =
 
 z : String
 z = "z is z"
+
+add : I64 -> I64 -> I64
+add = \x y -> x + y
