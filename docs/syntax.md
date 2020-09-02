@@ -65,26 +65,27 @@ program := definition (; definition)* | ""
 
 definition := expr_definition | type_annotation
 
-expr_definition := name "=" expr
+expr_definition := name = expr
 
 expr := lambda_expr | arithmetic_expr
 
-lambda_expr := "\" name "->" expr
+lambda_name := name | type_annotation
+lambda_expr := \ lambda_name -> expr
 
-let_expr := "let" "{" definition (; definition)* "}" "in" expr
+let_expr := let { definition (; definition)* } in expr
 
 arithmetic_expr := add_expr
-add_expr := mul_expr "+" mul_expr | mul_expr "-" mul_expr | mul_expr
-mul_expr := add_expr "*" add_expr | app_expr "/" app_expr | app_expr
-unary_minus_expr := "-" app_expr | app_expr
+add_expr := mul_expr + mul_expr | mul_expr - mul_expr | mul_expr
+mul_expr := add_expr * add_expr | app_expr / app_expr | app_expr
+unary_minus_expr := - app_expr | app_expr
 app_expr := factor factor | factor
 factor := name | number | (expr)
 
-type_annotation := name ":" type
+type_annotation := name : type
 
-type := type_factor "->" type_factor | type_factor
+type := type_factor -> type_factor | type_factor
 type_factor := primitive | (type)
-primitive := "I64"
+primitive := I64
 
 name := (a-z)(a-zA-Z0-9!?_)*
 number := (0-9)+
