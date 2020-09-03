@@ -15,18 +15,6 @@ x = 3
 y = \x -> x + 2
 ```
 
-# Type Annotations
-
-Top level definitions can also have *type annotations*, specifying what type a given expression is:
-
-```ovis
-x : Int
-x = 3
-
-y : Int -> Int
-y = \x -> x + 2
-```
-
 # Expressions
 
 The usual arithmetic expressions are supported.
@@ -37,16 +25,42 @@ We can also define functions, through the lambda syntax:
 \x -> x + 2
 ```
 
-Multiple arguments are possible:
-
-```ovis
-\x y -> x + y
-```
-
-This is equivalent to using currying:
+Multiple arguments are possible through *currying*:
 
 ```ovis
 \x -> \y -> x + y
+```
+
+# Type Annotations
+
+Top level definitions can also have *type annotations*, specifying what type a given expression is:
+
+```ovis
+x : I64
+x = 3
+
+y : I64 -> I64
+y = \x -> x + 2
+```
+
+## Polymorphism
+
+Ovis also supports a standard form of polymorphism. For example, the identity function would be:
+
+```ovis
+f : {a} => a -> a
+f = \x -> x
+```
+
+All new type variables must be explicitly declared with `{a, b} =>`. It's possible to reference
+previously introduced type variables, but unlike a language like Haskell, type annotations
+like `f : a -> a` won't desugar to `f : {a} => a -> a` automatically.
+
+### Examples
+
+```ovis
+first : {a, b} => a -> b -> b
+first = \a b -> a
 ```
 
 # Tokenizer
@@ -67,7 +81,7 @@ of what the syntax rules look like. Concerns like associativity aren't really co
 If you want to know *exactly* how the syntax is defined, it's best to read the source code.
 
 ```ovis
-program := definition (; definition)* | ""
+program := definition (";" definition)* | ""
 
 definition := expr_definition | type_annotation
 
@@ -75,22 +89,23 @@ expr_definition := name = expr
 
 expr := lambda_expr | arithmetic_expr
 
-lambda_expr := \ name+ -> expr
+lambda_expr := "\" name+ "->" expr
 
-let_expr := let { definition (; definition)* } in expr
+let_expr := "let" "{" definition (";" definition)* "}" "in" expr
 
 arithmetic_expr := add_expr
-add_expr := mul_expr + mul_expr | mul_expr - mul_expr | mul_expr
-mul_expr := add_expr * add_expr | app_expr / app_expr | app_expr
-unary_minus_expr := - app_expr | app_expr
+add_expr := mul_expr "+" mul_expr | mul_expr "-" mul_expr | mul_expr
+mul_expr := add_expr "*" add_expr | app_expr "/" app_expr | app_expr
+unary_minus_expr := "-" app_expr | app_expr
 app_expr := factor factor | factor
 factor := name | number | (expr)
 
-type_annotation := name : type
+type_annotation := name ":" scheme
 
-type := type_factor -> type_factor | type_factor
-type_factor := primitive | (type)
-primitive := I64
+scheme := "{" name ("," name)* "}" "=>" type | type
+type := type_factor "->" type_factor | type_factor
+type_factor := name | primitive | "(" type ")"
+primitive := "I64" | "String"
 
 name := (a-z)(a-zA-Z0-9!?_)*
 number := (0-9)+

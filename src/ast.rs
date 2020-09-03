@@ -60,13 +60,53 @@ impl<I, T> Expr<I, T> {
 
 /// Represents a type, formed through primitive types, or composition of other types
 #[derive(Clone, Debug, PartialEq)]
-pub enum TypeExpr {
+pub enum TypeExpr<I> {
     /// A function A -> B
-    Function(Box<TypeExpr>, Box<TypeExpr>),
+    Function(Box<TypeExpr<I>>, Box<TypeExpr<I>>),
     /// The primitive integer type
     I64,
     /// The primitive string type
     Strng,
+    /// A reference to some identifier, e.g. `a`
+    ///
+    /// Of course, that type variable has to be quantified in some scope for this
+    /// to make any sense.
+    TypeVar(I),
+}
+
+impl<I> TypeExpr<I> {
+    fn replace_idents<J, F: FnMut(I) -> J>(self, f: &mut F) -> TypeExpr<J> {
+        match self {
+            TypeExpr::TypeVar(i) => TypeExpr::TypeVar(f(i)),
+            TypeExpr::Function(fe, e) => TypeExpr::Function(
+                Box::new(fe.replace_idents(f)),
+                Box::new(e.replace_idents(f)),
+            ),
+            TypeExpr::I64 => TypeExpr::I64,
+            TypeExpr::Strng => TypeExpr::Strng,
+        }
+    }
+}
+
+/// Represents an expression of a scheme, i.e. type with quantified polymorphic vars.
+///
+/// This is used to represent some declaration of a scheme, e.g. `{a} => a -> a`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SchemeExpr<I> {
+    /// The polymorphic variables being quantified over
+    ///
+    /// They also have whatever kind of identifier we use for variable names.
+    pub type_vars: Vec<I>,
+    /// The expression being quantified over
+    pub typ: TypeExpr<I>,
+}
+
+impl<I> SchemeExpr<I> {
+    fn replace_idents<J, F: FnMut(I) -> J>(self, f: &mut F) -> SchemeExpr<J> {
+        let typ = self.typ.replace_idents(f);
+        let type_vars = self.type_vars.into_iter().map(f).collect();
+        SchemeExpr { type_vars, typ }
+    }
 }
 
 /// Represents a definition or annotation
@@ -76,7 +116,7 @@ pub enum TypeExpr {
 #[derive(Debug, PartialEq)]
 pub enum Definition<I, T> {
     /// Represents an annotation of a name with a given type
-    Type(I, TypeExpr),
+    Type(I, SchemeExpr<I>),
     /// Represents the definition of name, with its corresponding expression
     Val(I, T, Expr<I, T>),
 }
@@ -84,7 +124,7 @@ pub enum Definition<I, T> {
 impl<I, T> Definition<I, T> {
     fn replace_idents<J, F: FnMut(I) -> J>(self, f: &mut F) -> Definition<J, T> {
         match self {
-            Definition::Type(i, t) => Definition::Type(f(i), t),
+            Definition::Type(i, t) => Definition::Type(f(i), t.replace_idents(f)),
             Definition::Val(i, t, e) => Definition::Val(f(i), t, e.replace_idents(f)),
         }
     }

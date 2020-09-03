@@ -1,4 +1,4 @@
-use crate::ast::{Definition, Expr, TypeExpr, AST};
+use crate::ast::{Definition, Expr, SchemeExpr, TypeExpr, AST};
 use crate::interner::Ident;
 use std::collections::HashMap;
 
@@ -131,15 +131,25 @@ fn unwrap_partial(t: &MaybeType) -> Option<Type> {
     }
 }
 
-/// Try and convert a type expression to a maybe type
-fn parse_type_expr(expr: &TypeExpr) -> MaybeType {
+// TODO: Merge both of these functions
+fn go_parse_type_expr(expr: &TypeExpr<Ident>) -> MaybeType {
     match expr {
         TypeExpr::I64 => Base(Known(I64)),
         TypeExpr::Strng => Base(Known(Strng)),
-        TypeExpr::Function(t1, t2) => {
-            Function(Box::new(parse_type_expr(t1)), Box::new(parse_type_expr(t2)))
-        }
+        TypeExpr::Function(t1, t2) => Function(
+            Box::new(go_parse_type_expr(t1)),
+            Box::new(go_parse_type_expr(t2)),
+        ),
+        TypeExpr::TypeVar(_) => panic!("UNTHINKABLE: Polymorphism is not implemented yet!"),
     }
+}
+
+/// Try and convert a type expression to a maybe type
+fn parse_type_expr(expr: &SchemeExpr<Ident>) -> MaybeType {
+    if !expr.type_vars.is_empty() {
+        panic!("UNTHINKABLE: Polymorphism is not implemented yet!");
+    }
+    go_parse_type_expr(&expr.typ)
 }
 
 /// This represents the errors that can occurr will assigning types to the program tree

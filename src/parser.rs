@@ -3,7 +3,7 @@ use std::fmt;
 
 use peg;
 
-use crate::ast::{BinOp, TypeExpr};
+use crate::ast::{BinOp, SchemeExpr, TypeExpr};
 use crate::lexer::Token;
 
 /// Represents the results of parsing out an expression
@@ -27,7 +27,7 @@ pub enum Expr {
 #[derive(Debug, PartialEq)]
 pub enum Definition {
     /// A definition assigning some type to some identifier
-    Type(String, TypeExpr),
+    Type(String, SchemeExpr<String>),
     /// A definition assigning some expression to some identifier
     Val(String, Expr),
 }
@@ -50,14 +50,19 @@ peg::parser! {
         rule name() -> String
             = n:$[Name(_)] { n[0].get_name().unwrap().to_string() }
 
-        rule typ() -> TypeExpr = precedence!{
+        rule scheme() -> SchemeExpr<String>
+            = [LeftBrace] vs:(name() ** [Comma]) [RightBrace] [FatArrow] t:typ() { SchemeExpr { type_vars: vs, typ: t } }
+            / t:typ() { SchemeExpr { type_vars: Vec::new(), typ: t }}
+
+        rule typ() -> TypeExpr<String> = precedence!{
             a:@ [RightArrow] b:(@) { TypeExpr::Function(Box::new(a), Box::new(b)) }
             --
             [LeftParens] t:typ() [RightParens] { t }
+            n:name() { TypeExpr::TypeVar(n) }
             t:primitive_type() { t }
         }
 
-        rule primitive_type() -> TypeExpr
+        rule primitive_type() -> TypeExpr<String>
             = [TypeI64] { TypeExpr::I64 }
             / [TypeString] { TypeExpr::Strng }
 
@@ -96,7 +101,7 @@ peg::parser! {
 
         rule definition() -> Definition
             = n:name() [Equal] e:expr() { Definition::Val(n, e) }
-            / n:name() [Colon] t:typ() { Definition::Type(n, t) }
+            / n:name() [Colon] t:scheme() { Definition::Type(n, t) }
 
         pub rule ast() -> AST = [LeftBrace] ds:(definition() ** [Semicolon]) [RightBrace] { AST { definitions: ds } }
     }
@@ -270,7 +275,13 @@ mod test {
             "x : String\nx = \"foo\"",
             AST {
                 definitions: vec![
-                    Definition::Type("x".into(), TypeExpr::Strng),
+                    Definition::Type(
+                        "x".into(),
+                        SchemeExpr {
+                            type_vars: Vec::new(),
+                            typ: TypeExpr::Strng
+                        }
+                    ),
                     Definition::Val("x".into(), Expr::StringLitt("foo".into()))
                 ]
             }
@@ -295,16 +306,19 @@ mod test {
             AST {
                 definitions: vec![Definition::Type(
                     "apply".into(),
-                    TypeExpr::Function(
-                        Box::new(TypeExpr::Function(
-                            Box::new(TypeExpr::I64),
-                            Box::new(TypeExpr::I64)
-                        )),
-                        Box::new(TypeExpr::Function(
-                            Box::new(TypeExpr::I64),
-                            Box::new(TypeExpr::I64)
-                        )),
-                    )
+                    SchemeExpr {
+                        type_vars: Vec::new(),
+                        typ: TypeExpr::Function(
+                            Box::new(TypeExpr::Function(
+                                Box::new(TypeExpr::I64),
+                                Box::new(TypeExpr::I64)
+                            )),
+                            Box::new(TypeExpr::Function(
+                                Box::new(TypeExpr::I64),
+                                Box::new(TypeExpr::I64)
+                            )),
+                        )
+                    }
                 )]
             }
         )
@@ -337,6 +351,34 @@ mod test {
                     Box::new(Expr::NumberLitt(4))
                 )
             )
+        );
+    }
+
+    #[test]
+    fn polymorphic_schemes_parse() {
+        assert_parse!(
+            "const : {a, b} => a",
+            AST {
+                definitions: vec![Definition::Type(
+                    "const".into(),
+                    SchemeExpr {
+                        type_vars: vec!["a".into(), "b".into()],
+                        typ: TypeExpr::TypeVar("a".into())
+                    }
+                )]
+            }
+        );
+        assert_parse!(
+            "void : {a} => a",
+            AST {
+                definitions: vec![Definition::Type(
+                    "void".into(),
+                    SchemeExpr {
+                        type_vars: vec!["a".into()],
+                        typ: TypeExpr::TypeVar("a".into())
+                    }
+                )]
+            }
         );
     }
 }

@@ -102,10 +102,14 @@ pub enum Token {
     Colon,
     /// The ";" symbol
     Semicolon,
+    /// The "," symbol
+    Comma,
     /// The "=" symbol
     Equal,
     /// The "->" symbol
     RightArrow,
+    /// The "=>" symbol
+    FatArrow,
     /// The "+" symbol
     Plus,
     /// This can represent either unary minus, or binary minus, depending on the
@@ -196,6 +200,8 @@ pub enum LexError {
     /// A right brace was encountered will inferring layout that doesn't have
     /// a corresponding explicit opening brace
     UnmatchedRightBrace,
+    /// A left brace was encountered which doesn't have a matching right brace
+    UnmatchedLeftBrace,
     /// A string litteral was started but never ended
     UnterminatedString,
 }
@@ -206,6 +212,7 @@ impl fmt::Display for LexError {
         match self {
             Unexpected(c) => writeln!(f, "Unexpected character: '{}'", c),
             UnknownPrimitiveType(s) => writeln!(f, "Type {} is not a primitive type", s),
+            UnmatchedLeftBrace => writeln!(f, "Unmatched `{{` encountered"),
             UnmatchedRightBrace => writeln!(f, "Unmatched explicit `}}` encountered"),
             UnterminatedString => writeln!(f, "Unterminated string litteral"),
         }
@@ -288,9 +295,16 @@ impl<'a> Iterator for Tokenizer<'a> {
             ')' => Ok(RightParens),
             '{' => Ok(LeftBrace),
             '}' => Ok(RightBrace),
-            '=' => Ok(Equal),
+            '=' => match self.chars.peek_one() {
+                Some('>') => {
+                    self.chars.next_one();
+                    Ok(FatArrow)
+                }
+                _ => Ok(Equal),
+            },
             ':' => Ok(Colon),
             ';' => Ok(Token::Semicolon),
+            ',' => Ok(Token::Comma),
             '+' => Ok(Plus),
             '*' => Ok(Asterisk),
             '/' => Ok(FSlash),
@@ -358,6 +372,8 @@ struct Lexer {
     /// This layout we're expecting can either be started by an explicit brace, or
     /// implicitly, by the presence of indentation.
     expecting_layout: bool,
+    /// When set, we're expecting a closing right brace on the same line, e.g. for a scheme
+    expected_non_layout_braces: u64,
 }
 
 impl Lexer {
@@ -366,6 +382,7 @@ impl Lexer {
             tokens: Vec::new(),
             layouts: Vec::new(),
             expecting_layout: true,
+            expected_non_layout_braces: 0,
         }
     }
 
@@ -399,13 +416,25 @@ impl Lexer {
         // but there's one case where it doesn't, hence the mutable variable.
         let mut should_handle_indent = token.line_pos == LinePosition::Start;
         if token.item == Token::RightBrace {
-            should_handle_indent = false;
-            if let Some(Layout::Explicit) = self.current_layout() {
-                self.layouts.pop();
+            // We'll assume that the first right brace we see matches the one we need for the non layout brace
+            if self.expected_non_layout_braces > 0 {
+                self.expected_non_layout_braces -= 1;
             } else {
-                return Err(LexError::UnmatchedRightBrace);
+                should_handle_indent = false;
+                if let Some(Layout::Explicit) = self.current_layout() {
+                    self.layouts.pop();
+                } else {
+                    return Err(LexError::UnmatchedRightBrace);
+                }
             }
         } else if token.item.starts_layout() {
+            // If we're about to start a layout, but haven't managed to close
+            // the non-layout brace, then we want to go ahead and throw an error
+            // to capture this early. Otherwise this error might show in some other weird
+            // way later.
+            if self.expected_non_layout_braces > 0 {
+                return Err(LexError::UnmatchedLeftBrace);
+            }
             should_handle_indent = false;
             self.expecting_layout = true;
         } else if self.expecting_layout {
@@ -429,6 +458,10 @@ impl Lexer {
                     should_handle_indent = true;
                 }
             }
+        } else if token.item == Token::LeftBrace {
+            // If we see a stray left brace in the middle of some line, then this
+            // is part of some non-layout construct
+            self.expected_non_layout_braces += 1;
         }
         if should_handle_indent {
             let n = Layout::IndentedBy(token.col);
@@ -470,8 +503,13 @@ mod test {
     macro_rules! assert_lex {
         ($input:expr, $t:expr) => {{
             let res = lex($input);
-            assert!(res.is_ok());
-            assert_eq!(res.unwrap(), $t)
+            assert!(
+                res.is_ok(),
+                "`{}` failed to lex: {:?}",
+                $input,
+                res.unwrap_err()
+            );
+            assert_eq!(res.unwrap(), $t);
         }};
     }
 
@@ -493,12 +531,36 @@ mod test {
     #[test]
     fn lexing_operators_works() {
         assert_lex!(
-            "= : -> + - * / \\",
+            "= : ; , -> => + - * / \\",
             vec![
-                LeftBrace, Equal, Colon, RightArrow, Plus, Minus, Asterisk, FSlash, BSlash,
-                RightBrace
+                LeftBrace, Equal, Colon, Semicolon, Comma, RightArrow, FatArrow, Plus, Minus,
+                Asterisk, FSlash, BSlash, RightBrace
             ]
         );
+    }
+
+    #[test]
+    fn lexing_schemes_works() {
+        assert_lex!(
+            "const : {a, b} => a -> b -> b",
+            vec![
+                LeftBrace,
+                Name("const".into()),
+                Colon,
+                LeftBrace,
+                Name("a".into()),
+                Comma,
+                Name("b".into()),
+                RightBrace,
+                FatArrow,
+                Name("a".into()),
+                RightArrow,
+                Name("b".into()),
+                RightArrow,
+                Name("b".into()),
+                RightBrace
+            ]
+        )
     }
 
     #[test]
