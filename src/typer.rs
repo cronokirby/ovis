@@ -322,7 +322,6 @@ impl Typer {
         &mut self,
         expected: MaybeType,
         i: Ident,
-        typ: Option<TypeExpr>,
         e: Expr<Ident, ()>,
     ) -> TypeResult<(Expr<Ident, Type>, MaybeType)> {
         // First we already know that we're going to end up with a lambda,
@@ -335,14 +334,8 @@ impl Typer {
         let (expected_input, expected_output) = expected_function
             .as_function()
             .expect("UNTHINKABLE: specialized function type is not function type");
-        let i_declared = typ
-            .clone()
-            .map(|x| parse_type_expr(&x))
-            .unwrap_or(Base(Unknown));
         self.context.enter();
         self.context.introduce(i);
-        // Now we can try and assign the declared type and the expected input together
-        self.context.assign(i, i_declared)?;
         self.context.assign(i, expected_input.clone())?;
         let (er, et) = self.expr(expected_output.clone(), e)?;
         // We've assigned it a type, so we can unwrap
@@ -354,7 +347,7 @@ impl Typer {
             &expected_function,
             &Function(Box::new(maybe_i), Box::new(et)),
         )?;
-        Ok((Expr::Lambda(i, typ, typeof_i, Box::new(er)), result_type))
+        Ok((Expr::Lambda(i, typeof_i, Box::new(er)), result_type))
     }
 
     fn definitions(
@@ -434,7 +427,7 @@ impl Typer {
                 Ok((Expr::Negate(Box::new(r)), t))
             }
             Expr::Apply(f, e) => self.apply(expected, *f, *e),
-            Expr::Lambda(i, typ, _, e) => self.lambda(expected, i, typ, *e),
+            Expr::Lambda(i, _, e) => self.lambda(expected, i, *e),
             Expr::Let(defs, expr) => self.handle_let(expected, defs, *expr),
         }
     }
@@ -514,7 +507,7 @@ mod test {
         assert_types!(r#"f : I64 -> I64 -> I64; f = \x -> \y -> y"#);
         assert_types!(r#"f : (I64 -> String) -> I64 -> String; f = \g -> \x -> g x"#);
         assert_types!(r#"f : (I64 -> I64) -> (I64 -> I64); f = \g -> g"#);
-        assert_types!(r#"f : (I64 -> I64) -> I64 -> I64; f = \(g : I64 -> I64) x -> g x + g 2"#);
+        assert_types!(r#"f : (I64 -> I64) -> I64 -> I64; f = \g x -> g x + g 2"#);
     }
 
     #[test]

@@ -15,7 +15,7 @@ pub enum BinOp {
 #[derive(Debug, PartialEq)]
 pub enum Expr<I, T> {
     /// A lambda abstraction / function litteral
-    Lambda(I, Option<TypeExpr>, T, Box<Expr<I, T>>),
+    Lambda(I, T, Box<Expr<I, T>>),
     /// A let expression, where we have a sequence of definitions bound before
     /// an expression.
     Let(Vec<Definition<I, T>>, Box<Expr<I, T>>),
@@ -36,7 +36,7 @@ pub enum Expr<I, T> {
 impl<I, T> Expr<I, T> {
     fn replace_idents<J, F: FnMut(I) -> J>(self, f: &mut F) -> Expr<J, T> {
         match self {
-            Expr::Lambda(i, te, t, e) => Expr::Lambda(f(i), te, t, Box::new(e.replace_idents(f))),
+            Expr::Lambda(i, t, e) => Expr::Lambda(f(i), t, Box::new(e.replace_idents(f))),
             Expr::Let(defs, e) => Expr::Let(
                 defs.into_iter().map(|d| d.replace_idents(f)).collect(),
                 Box::new(e.replace_idents(f)),

@@ -11,7 +11,7 @@ use crate::lexer::Token;
 pub enum Expr {
     /// A lambda introducing a single name, potentially
     /// with a type annotation, and having a body as another expression
-    Lambda(Vec<(String, Option<TypeExpr>)>, Box<Expr>),
+    Lambda(Vec<String>, Box<Expr>),
     /// A let expression, with multiple definitions before
     /// a final expression using those definitions
     Let(Vec<Definition>, Box<Expr>),
@@ -64,12 +64,8 @@ peg::parser! {
 
         rule expr() -> Expr = lambda_expr() / let_expr() / arithmetic()
 
-        rule lambda_name() -> (String, Option<TypeExpr>)
-            = [LeftParens] n:name() [Colon] t:typ() [RightParens] { (n, Some(t)) }
-            / n:name() { (n, None) }
-
         rule lambda_expr() -> Expr
-            = [BSlash] nt:lambda_name()+ [RightArrow] e:expr() { Expr::Lambda(nt,  Box::new(e)) }
+            = [BSlash] ns:name()+ [RightArrow] e:expr() { Expr::Lambda(ns,  Box::new(e)) }
 
         rule let_expr() -> Expr
             = [Let] [LeftBrace] ds:(definition() ** [Semicolon]) [RightBrace] [In] e:expr() { Expr::Let(ds, Box::new(e)) }
@@ -240,7 +236,7 @@ mod test {
             r#"x = \y -> 2"#,
             val_def!(
                 "x",
-                Expr::Lambda(vec![("y".into(), None)], Box::new(Expr::NumberLitt(2)))
+                Expr::Lambda(vec!["y".into()], Box::new(Expr::NumberLitt(2)))
             )
         );
         assert_parse!(
@@ -248,20 +244,20 @@ mod test {
             val_def!(
                 "x",
                 Expr::Lambda(
-                    vec![("a".into(), None)],
+                    vec!["a".into()],
                     Box::new(Expr::Lambda(
-                        vec![("b".into(), None)],
+                        vec!["b".into()],
                         Box::new(Expr::NumberLitt(2))
                     ))
                 )
             )
         );
         assert_parse!(
-            r#"f = \(x : I64) y -> x"#,
+            r#"f = \x y -> x"#,
             val_def!(
                 "f",
                 Expr::Lambda(
-                    vec![("x".into(), Some(TypeExpr::I64)), ("y".into(), None)],
+                    vec!["x".into(), "y".into()],
                     Box::new(Expr::Name("x".into()))
                 )
             )

@@ -49,13 +49,6 @@ This is equivalent to using currying:
 \x -> \y -> x + y
 ```
 
-Type annotations on the bindings introduced are permitted, but must be wrapped
-in parentheses:
-
-```ovis
-\(f : I64 -> I64) y (z: I64) -> f y + f z
-```
-
 # Tokenizer
 
 The tokenizer / lexer takes the string based representation of our program, and converts
@@ -82,8 +75,7 @@ expr_definition := name = expr
 
 expr := lambda_expr | arithmetic_expr
 
-lambda_name := name | ( type_annotation )
-lambda_expr := \ lambda_name+ -> expr
+lambda_expr := \ name+ -> expr
 
 let_expr := let { definition (; definition)* } in expr
 
