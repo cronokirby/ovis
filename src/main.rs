@@ -121,7 +121,11 @@ fn real_main(args: Args) -> Result<(), CompileError> {
         fs::read_to_string(&args.path).map_err(|_| CompileError::CouldntRead(args.path.clone()))?;
     let tokens = lexer::lex(&contents)?;
     if args.stage <= Stage::Lex {
-        println!("Lexed:\n\n{:?}", tokens);
+        println!("Lexed:\n");
+        for t in tokens {
+            print!("{}  ", t);
+        }
+        println!("");
         return Ok(());
     }
     let ast = parser::parse(&tokens)?;

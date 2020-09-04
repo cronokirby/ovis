@@ -147,6 +147,35 @@ pub enum Token {
     Name(String),
 }
 
+impl fmt::Display for Token {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Token::Colon => write!(f, ":"),
+            Token::Semicolon => write!(f, ";"),
+            Token::Comma => write!(f, ","),
+            Token::Equal => write!(f, "="),
+            Token::RightArrow => write!(f, "->"),
+            Token::FatArrow => write!(f, "=>"),
+            Token::Plus => write!(f, "+"),
+            Token::Minus => write!(f, "-"),
+            Token::Asterisk => write!(f, "*"),
+            Token::FSlash => write!(f, "/"),
+            Token::BSlash => write!(f, "\\"),
+            Token::LeftParens => write!(f, "("),
+            Token::RightParens => write!(f, ")"),
+            Token::LeftBrace => write!(f, "{{"),
+            Token::RightBrace => write!(f, "}}"),
+            Token::Let => write!(f, "let"),
+            Token::In => write!(f, "in"),
+            Token::TypeI64 => write!(f, "I64"),
+            Token::TypeString => write!(f, "String"),
+            Token::NumberLitt(n) => write!(f, "{}", n),
+            Token::StringLitt(s) => write!(f, "\"{}\"", s),
+            Token::Name(n) => write!(f, "{}", n),
+        }
+    }
+}
+
 impl Token {
     /// Try and get the number containing in a numeric litteral token
     pub fn get_number(&self) -> Option<i64> {
