@@ -17,6 +17,18 @@ pub enum BinOp {
     /// The / operator
     Div,
 }
+
+impl fmt::Display for BinOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BinOp::Add => write!(f, "+"),
+            BinOp::Sub => write!(f, "-"),
+            BinOp::Mul => write!(f, "*"),
+            BinOp::Div => write!(f, "/"),
+        }
+    }
+}
+
 /// Represents the syntactic form of a type
 ///
 /// This is somewhat similar to the way we define our internal representation of types, modulo
@@ -35,6 +47,17 @@ pub enum TypeExpr {
     TypeVar(String),
 }
 
+impl fmt::Display for TypeExpr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TypeExpr::Function(t1, t2) => write!(f, "(-> {} {})", t1, t2),
+            TypeExpr::TypeVar(n) => write!(f, "{}", n),
+            TypeExpr::I64 => write!(f, "I64"),
+            TypeExpr::Strng => write!(f, "String"),
+        }
+    }
+}
+
 /// Represents an expression of a scheme, i.e. type with quantified polymorphic vars.
 ///
 /// This is used to represent some declaration of a scheme, e.g. `{a} => a -> a`.
@@ -46,6 +69,26 @@ pub struct SchemeExpr {
     pub type_vars: Vec<String>,
     /// The expression being quantified over
     pub typ: TypeExpr,
+}
+
+impl fmt::Display for SchemeExpr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if !self.type_vars.is_empty() {
+            write!(f, "(=> (")?;
+            let mut i = 0;
+            for v in &self.type_vars {
+                if i == 0 {
+                    write!(f, "{}", v)?;
+                } else {
+                    write!(f, " {}", v)?;
+                }
+                i += 1;
+            }
+            write!(f, ") {})", self.typ)
+        } else {
+            write!(f, "{}", self.typ)
+        }
+    }
 }
 
 /// Represents the results of parsing out an expression
@@ -65,6 +108,46 @@ pub enum Expr {
     Apply(Box<Expr>, Box<Expr>),
 }
 
+impl fmt::Display for Expr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Expr::Lambda(names, expr) => {
+                write!(f, "(λ (")?;
+                let mut i = 0;
+                for name in names {
+                    if i == 0 {
+                        write!(f, "{}", name)?;
+                    } else {
+                        write!(f, " {}", name)?;
+                    }
+                    i += 1;
+                }
+                write!(f, ") {})", expr)?;
+            }
+            Expr::Name(n) => write!(f, "{}", n)?,
+            Expr::NumberLitt(i) => write!(f, "{}", i)?,
+            Expr::StringLitt(s) => write!(f, "\"{}\"", s)?,
+            Expr::Binary(op, e1, e2) => write!(f, "({} {} {})", op, e1, e2)?,
+            Expr::Negate(e) => write!(f, "(- {})", e)?,
+            Expr::Apply(e1, e2) => write!(f, "(apply {} {})", e1, e2)?,
+            Expr::Let(defs, e) => {
+                write!(f, "(let (")?;
+                let mut i = 0;
+                for d in defs {
+                    if i == 0 {
+                        write!(f, "{}", d)?;
+                    } else {
+                        write!(f, " {}", d)?;
+                    }
+                    i += 1;
+                }
+                write!(f, ") {})", e)?;
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Represents the parse result of some definition
 #[derive(Debug, PartialEq)]
 pub enum Definition {
@@ -74,9 +157,28 @@ pub enum Definition {
     Val(String, Expr),
 }
 
+impl fmt::Display for Definition {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Definition::Type(n, s) => write!(f, "(: {} {})", n, s),
+            Definition::Val(n, e) => write!(f, "(= {} {})", n, e),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct AST {
     pub definitions: Vec<Definition>,
+}
+
+impl fmt::Display for AST {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "(ast")?;
+        for def in &self.definitions {
+            writeln!(f, "  {}", def)?;
+        }
+        Ok(())
+    }
 }
 
 peg::parser! {

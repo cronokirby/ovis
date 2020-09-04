@@ -74,7 +74,9 @@ enum Stage {
     Lex,
     /// The user wants us to stop after parsing (and thus lexing)
     Parse,
-    /// The user wants us to stop after type checking (and thus parsing)
+    /// The user wants us to stop after simplifying the parse tree (and thus parsing)
+    Simplify,
+    /// The user wants us to stop after type checking (and thus simplifying)
     Type,
 }
 
@@ -85,6 +87,7 @@ impl TryFrom<&str> for Stage {
         match value {
             "lex" => Ok(Stage::Lex),
             "parse" => Ok(Stage::Parse),
+            "simplify" => Ok(Stage::Simplify),
             "type" => Ok(Stage::Type),
             _ => Err(()),
         }
@@ -118,19 +121,23 @@ fn real_main(args: Args) -> Result<(), CompileError> {
         fs::read_to_string(&args.path).map_err(|_| CompileError::CouldntRead(args.path.clone()))?;
     let tokens = lexer::lex(&contents)?;
     if args.stage <= Stage::Lex {
-        println!("Lex: {:?}", tokens);
+        println!("Lexed:\n\n{:?}", tokens);
         return Ok(());
     }
     let ast = parser::parse(&tokens)?;
-    let (simplified, dict) = simplifier::simplify(ast);
     if args.stage <= Stage::Parse {
-        println!("Parse: {:?}", simplified);
+        println!("Parsed:\n\n{}", ast);
+        return Ok(());
+    }
+    let (simplified, dict) = simplifier::simplify(ast);
+    if args.stage <= Stage::Simplify {
+        println!("Simplified:\n\n{:?}", simplified);
         return Ok(());
     }
     let typed = typer::typer(simplified)
         .map_err(|e| e.replace_idents(|i| dict.get(i).unwrap().to_string()))?;
     if args.stage <= Stage::Type {
-        println!("Typed: {:?}", typed);
+        println!("Typed:\n\n{:?}", typed);
         return Ok(());
     }
     Ok(())
