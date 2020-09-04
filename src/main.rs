@@ -135,13 +135,16 @@ fn real_main(args: Args) -> Result<(), CompileError> {
     }
     let (simplified, dict) = simplifier::simplify(ast);
     if args.stage <= Stage::Simplify {
-        println!("Simplified:\n\n{:?}", simplified);
+        println!(
+            "Simplified:\n\n{}",
+            simplifier::WithDict::new(&simplified, &dict)
+        );
         return Ok(());
     }
     let typed = typer::typer(simplified)
         .map_err(|e| e.replace_idents(|i| dict.get(i).unwrap().to_string()))?;
     if args.stage <= Stage::Type {
-        println!("Typed:\n\n{:?}", typed);
+        println!("Typed:\n\n{}", simplifier::WithDict::new(&typed, &dict));
         return Ok(());
     }
     Ok(())

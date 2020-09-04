@@ -1,6 +1,7 @@
 use crate::parser;
 
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::hash::Hash;
 
 use std::fmt::{Display, Formatter, Result as FmtResult};
@@ -110,12 +111,44 @@ impl Interner {
     }
 }
 
+/// This structure annotates some piece of an AST with a reference to a dictionary
+///
+/// This allows us to pretty print certain parts of an AST without having ugly
+/// identifiers in the pretty part.
+pub struct WithDict<'a, A> {
+    view: &'a A,
+    dict: &'a Dictionary,
+}
+
+impl<'a, A> WithDict<'a, A> {
+    pub fn new(view: &'a A, dict: &'a Dictionary) -> Self {
+        WithDict { view, dict }
+    }
+
+    fn with_view<B>(&self, view: &'a B) -> WithDict<'a, B> {
+        WithDict {
+            view,
+            dict: self.dict,
+        }
+    }
+}
+
 /// We simply reuse the binary operations provided by the parser
 pub type BinOp = parser::BinOp;
 
+/// Represents a kind of type with no information whatsoever
+#[derive(Clone, Copy, Debug)]
+pub struct Unknown;
+
+impl fmt::Display for Unknown {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "?")
+    }
+}
+
 /// Represents a single expression in our language
 #[derive(Debug, PartialEq)]
-pub enum Expr<T> {
+pub enum Expr<T = Unknown> {
     /// A lambda abstraction / function litteral
     Lambda(Ident, T, Box<Expr<T>>),
     /// A let expression, where we have a sequence of definitions bound before
@@ -134,6 +167,51 @@ pub enum Expr<T> {
     /// Represents the application of one function to an argument
     Apply(Box<Expr<T>>, Box<Expr<T>>),
 }
+
+impl<'a, T: fmt::Display> fmt::Display for WithDict<'a, Expr<T>> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.view {
+            Expr::Lambda(n, t, e) => write!(
+                f,
+                "(λ (: {} {}) {})",
+                self.dict.get(*n).unwrap(),
+                t,
+                self.with_view(e.as_ref())
+            ),
+            Expr::Name(n) => write!(f, "{}", self.dict.get(*n).unwrap()),
+            Expr::NumberLitt(i) => write!(f, "{}", i),
+            Expr::StringLitt(s) => write!(f, "\"{}\"", s),
+            Expr::Binary(op, e1, e2) => write!(
+                f,
+                "({} {} {})",
+                op,
+                self.with_view(e1.as_ref()),
+                self.with_view(e2.as_ref())
+            ),
+            Expr::Negate(e) => write!(f, "(- {})", self.with_view(e.as_ref())),
+            Expr::Apply(e1, e2) => write!(
+                f,
+                "(apply {} {})",
+                self.with_view(e1.as_ref()),
+                self.with_view(e2.as_ref())
+            ),
+            Expr::Let(defs, e) => {
+                write!(f, "(let (")?;
+                let mut i = 0;
+                for d in defs {
+                    if i == 0 {
+                        write!(f, "{}", self.with_view(d))?;
+                    } else {
+                        write!(f, " {}", self.with_view(d))?;
+                    }
+                    i += 1;
+                }
+                write!(f, ") {})", self.with_view(e.as_ref()))
+            }
+        }
+    }
+}
+
 /// Represents a type, formed through primitive types, or composition of other types
 #[derive(Clone, Debug, PartialEq)]
 pub enum Type {
@@ -150,6 +228,22 @@ pub enum Type {
     TypeVar(Ident),
 }
 
+impl<'a> fmt::Display for WithDict<'a, Type> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.view {
+            Type::Function(t1, t2) => write!(
+                f,
+                "(-> {} {})",
+                self.with_view(t1.as_ref()),
+                self.with_view(t2.as_ref())
+            ),
+            Type::TypeVar(n) => write!(f, "{}", self.dict.get(*n).unwrap()),
+            Type::I64 => write!(f, "I64"),
+            Type::Strng => write!(f, "String"),
+        }
+    }
+}
+
 /// Represents an expression of a scheme, i.e. type with quantified polymorphic vars.
 ///
 /// This is used to represent some declaration of a scheme, e.g. `{a} => a -> a`.
@@ -163,16 +257,57 @@ pub struct Scheme {
     pub typ: Type,
 }
 
+impl<'a> fmt::Display for WithDict<'a, Scheme> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let view = self.view;
+        if !view.type_vars.is_empty() {
+            write!(f, "(=> (")?;
+            let mut i = 0;
+            for v in &view.type_vars {
+                if i == 0 {
+                    write!(f, "{}", self.dict.get(*v).unwrap())?;
+                } else {
+                    write!(f, " {}", self.dict.get(*v).unwrap())?;
+                }
+                i += 1;
+            }
+            write!(f, ") {})", self.with_view(&view.typ))
+        } else {
+            write!(f, "{}", self.with_view(&view.typ))
+        }
+    }
+}
+
 /// Represents a definition or annotation
 ///
 /// A definition assigns a name to an expression, and a type annotation assigns
 /// an explicit type to a name. Type annotations are optional in our language.
 #[derive(Debug, PartialEq)]
-pub enum Definition<T> {
+pub enum Definition<T = Unknown> {
     /// Represents an annotation of a name with a given type
     Type(Ident, Scheme),
     /// Represents the definition of name, with its corresponding expression
     Val(Ident, T, Expr<T>),
+}
+
+impl<'a, T: fmt::Display> fmt::Display for WithDict<'a, Definition<T>> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.view {
+            Definition::Type(n, s) => write!(
+                f,
+                "(: {} {})",
+                self.dict.get(*n).unwrap(),
+                self.with_view(s)
+            ),
+            Definition::Val(n, t, e) => write!(
+                f,
+                "(= (: {} {}) {})",
+                self.dict.get(*n).unwrap(),
+                t,
+                self.with_view(e)
+            ),
+        }
+    }
 }
 
 /// Represents a program in our language.
@@ -181,8 +316,18 @@ pub enum Definition<T> {
 ///
 /// A program is just a sequence of value or type annotations
 #[derive(Debug, PartialEq)]
-pub struct AST<T = ()> {
+pub struct AST<T = Unknown> {
     pub definitions: Vec<Definition<T>>,
+}
+
+impl<'a, T: fmt::Display> fmt::Display for WithDict<'a, AST<T>> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "(ast")?;
+        for def in &self.view.definitions {
+            writeln!(f, "  {}", self.with_view(def))?;
+        }
+        writeln!(f, ")")
+    }
 }
 
 struct Simplifier {
@@ -216,7 +361,7 @@ impl Simplifier {
         Scheme { type_vars, typ }
     }
 
-    fn expr(&mut self, e: parser::Expr) -> Expr<()> {
+    fn expr(&mut self, e: parser::Expr) -> Expr {
         match e {
             parser::Expr::Name(n) => Expr::Name(self.interner.ident(n)),
             parser::Expr::StringLitt(s) => Expr::StringLitt(s),
@@ -234,25 +379,25 @@ impl Simplifier {
             parser::Expr::Lambda(bindings, body) => {
                 let mut seed = self.expr(*body);
                 for name in bindings.into_iter().rev() {
-                    seed = Expr::Lambda(self.interner.ident(name), (), Box::new(seed))
+                    seed = Expr::Lambda(self.interner.ident(name), Unknown, Box::new(seed))
                 }
                 seed
             }
         }
     }
 
-    fn definition(&mut self, def: parser::Definition) -> Definition<()> {
+    fn definition(&mut self, def: parser::Definition) -> Definition {
         match def {
             parser::Definition::Type(name, scheme) => {
                 Definition::Type(self.interner.ident(name), self.scheme(scheme))
             }
             parser::Definition::Val(name, expr) => {
-                Definition::Val(self.interner.ident(name), (), self.expr(expr))
+                Definition::Val(self.interner.ident(name), Unknown, self.expr(expr))
             }
         }
     }
 
-    fn definitions(&mut self, defs: Vec<parser::Definition>) -> Vec<Definition<()>> {
+    fn definitions(&mut self, defs: Vec<parser::Definition>) -> Vec<Definition> {
         defs.into_iter().map(|x| self.definition(x)).collect()
     }
 

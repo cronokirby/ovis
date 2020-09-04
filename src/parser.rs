@@ -177,7 +177,7 @@ impl fmt::Display for AST {
         for def in &self.definitions {
             writeln!(f, "  {}", def)?;
         }
-        Ok(())
+        write!(f, ")")
     }
 }
 

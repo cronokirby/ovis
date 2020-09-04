@@ -313,8 +313,8 @@ impl Typer {
     fn apply(
         &mut self,
         expected: MaybeType,
-        f: Expr<()>,
-        e: Expr<()>,
+        f: Expr,
+        e: Expr,
     ) -> TypeResult<(Expr<Type>, MaybeType)> {
         // We want to try and infer the type of the argument first
         let (er, et) = self.expr(Base(Unknown), e)?;
@@ -331,7 +331,7 @@ impl Typer {
         &mut self,
         expected: MaybeType,
         i: Ident,
-        e: Expr<()>,
+        e: Expr,
     ) -> TypeResult<(Expr<Type>, MaybeType)> {
         // First we already know that we're going to end up with a lambda,
         // so we can go ahead and unify that information with the expected type, and catch
@@ -359,10 +359,7 @@ impl Typer {
         Ok((Expr::Lambda(i, typeof_i, Box::new(er)), result_type))
     }
 
-    fn definitions(
-        &mut self,
-        defs: Vec<Definition<()>>,
-    ) -> TypeResult<Vec<Definition<Type>>> {
+    fn definitions(&mut self, defs: Vec<Definition>) -> TypeResult<Vec<Definition<Type>>> {
         let mut new_defs: Vec<Definition<Type>> = Vec::new();
         for d in defs {
             match d {
@@ -390,8 +387,8 @@ impl Typer {
     fn handle_let(
         &mut self,
         expected: MaybeType,
-        defs: Vec<Definition<()>>,
-        expr: Expr<()>,
+        defs: Vec<Definition>,
+        expr: Expr,
     ) -> TypeResult<(Expr<Type>, MaybeType)> {
         self.context.enter();
         let new_defs = self.definitions(defs)?;
@@ -401,11 +398,7 @@ impl Typer {
         Ok((Expr::Let(new_defs, Box::new(re)), rt))
     }
 
-    fn expr(
-        &mut self,
-        expected: MaybeType,
-        expr: Expr<()>,
-    ) -> TypeResult<(Expr<Type>, MaybeType)> {
+    fn expr(&mut self, expected: MaybeType, expr: Expr) -> TypeResult<(Expr<Type>, MaybeType)> {
         match expr {
             Expr::Name(n) => match self.context.type_of(n) {
                 None => Err(TypeError::UndefinedName(n)),
@@ -441,7 +434,7 @@ impl Typer {
         }
     }
 
-    fn run(&mut self, untyped: AST<()>) -> TypeResult<AST<Type>> {
+    fn run(&mut self, untyped: AST) -> TypeResult<AST<Type>> {
         let new_defs = self.definitions(untyped.definitions)?;
         Ok(AST {
             definitions: new_defs,
@@ -453,7 +446,7 @@ impl Typer {
 ///
 /// Of course, this can potentially fail, in which case we'll return an error describing
 /// the kind of error that occurred.
-pub fn typer(untyped: AST<()>) -> TypeResult<AST<Type>> {
+pub fn typer(untyped: AST) -> TypeResult<AST<Type>> {
     let mut typer = Typer::new();
     typer.run(untyped)
 }
