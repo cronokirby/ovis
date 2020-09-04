@@ -1,5 +1,3 @@
-mod ast;
-mod interner;
 mod lexer;
 mod parser;
 mod simplifier;
@@ -124,16 +122,15 @@ fn real_main(args: Args) -> Result<(), CompileError> {
         return Ok(());
     }
     let ast = parser::parse(&tokens)?;
-    let simplified = simplifier::simplify(ast);
-    let (interned_ast, dict) = interner::intern(simplified);
+    let (simplified, dict) = simplifier::simplify(ast);
     if args.stage <= Stage::Parse {
-        println!("Parse: {:?}", dict.unintern(interned_ast));
+        println!("Parse: {:?}", simplified);
         return Ok(());
     }
-    let typed = typer::typer(interned_ast)
+    let typed = typer::typer(simplified)
         .map_err(|e| e.replace_idents(|i| dict.get(i).unwrap().to_string()))?;
     if args.stage <= Stage::Type {
-        println!("Typed: {:?}", dict.unintern(typed));
+        println!("Typed: {:?}", typed);
         return Ok(());
     }
     Ok(())

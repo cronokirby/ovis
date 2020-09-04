@@ -1,5 +1,4 @@
-use crate::ast::{Definition, Expr, SchemeExpr, TypeExpr, AST};
-use crate::interner::Ident;
+use crate::simplifier::{Definition, Expr, Ident, Scheme as SchemeExpr, Type as TypeExpr, AST};
 use std::collections::HashMap;
 
 use std::error::Error;
@@ -132,7 +131,7 @@ fn unwrap_partial(t: &MaybeType) -> Option<Type> {
 }
 
 // TODO: Merge both of these functions
-fn go_parse_type_expr(expr: &TypeExpr<Ident>) -> MaybeType {
+fn go_parse_type_expr(expr: &TypeExpr) -> MaybeType {
     match expr {
         TypeExpr::I64 => Base(Known(I64)),
         TypeExpr::Strng => Base(Known(Strng)),
@@ -145,7 +144,7 @@ fn go_parse_type_expr(expr: &TypeExpr<Ident>) -> MaybeType {
 }
 
 /// Try and convert a type expression to a maybe type
-fn parse_type_expr(expr: &SchemeExpr<Ident>) -> MaybeType {
+fn parse_type_expr(expr: &SchemeExpr) -> MaybeType {
     if !expr.type_vars.is_empty() {
         panic!("UNTHINKABLE: Polymorphism is not implemented yet!");
     }
@@ -314,9 +313,9 @@ impl Typer {
     fn apply(
         &mut self,
         expected: MaybeType,
-        f: Expr<Ident, ()>,
-        e: Expr<Ident, ()>,
-    ) -> TypeResult<(Expr<Ident, Type>, MaybeType)> {
+        f: Expr<()>,
+        e: Expr<()>,
+    ) -> TypeResult<(Expr<Type>, MaybeType)> {
         // We want to try and infer the type of the argument first
         let (er, et) = self.expr(Base(Unknown), e)?;
         let (fr, ft) = self.expr(Function(Box::new(et), Box::new(expected.clone())), f)?;
@@ -332,8 +331,8 @@ impl Typer {
         &mut self,
         expected: MaybeType,
         i: Ident,
-        e: Expr<Ident, ()>,
-    ) -> TypeResult<(Expr<Ident, Type>, MaybeType)> {
+        e: Expr<()>,
+    ) -> TypeResult<(Expr<Type>, MaybeType)> {
         // First we already know that we're going to end up with a lambda,
         // so we can go ahead and unify that information with the expected type, and catch
         // things like 3 + \x -> ... early
@@ -362,9 +361,9 @@ impl Typer {
 
     fn definitions(
         &mut self,
-        defs: Vec<Definition<Ident, ()>>,
-    ) -> TypeResult<Vec<Definition<Ident, Type>>> {
-        let mut new_defs: Vec<Definition<Ident, Type>> = Vec::new();
+        defs: Vec<Definition<()>>,
+    ) -> TypeResult<Vec<Definition<Type>>> {
+        let mut new_defs: Vec<Definition<Type>> = Vec::new();
         for d in defs {
             match d {
                 Definition::Type(i, t) => {
@@ -391,9 +390,9 @@ impl Typer {
     fn handle_let(
         &mut self,
         expected: MaybeType,
-        defs: Vec<Definition<Ident, ()>>,
-        expr: Expr<Ident, ()>,
-    ) -> TypeResult<(Expr<Ident, Type>, MaybeType)> {
+        defs: Vec<Definition<()>>,
+        expr: Expr<()>,
+    ) -> TypeResult<(Expr<Type>, MaybeType)> {
         self.context.enter();
         let new_defs = self.definitions(defs)?;
         let (re, rt) = self.expr(expected.clone(), expr)?;
@@ -405,8 +404,8 @@ impl Typer {
     fn expr(
         &mut self,
         expected: MaybeType,
-        expr: Expr<Ident, ()>,
-    ) -> TypeResult<(Expr<Ident, Type>, MaybeType)> {
+        expr: Expr<()>,
+    ) -> TypeResult<(Expr<Type>, MaybeType)> {
         match expr {
             Expr::Name(n) => match self.context.type_of(n) {
                 None => Err(TypeError::UndefinedName(n)),
@@ -442,7 +441,7 @@ impl Typer {
         }
     }
 
-    fn run(&mut self, untyped: AST<Ident, ()>) -> TypeResult<AST<Ident, Type>> {
+    fn run(&mut self, untyped: AST<()>) -> TypeResult<AST<Type>> {
         let new_defs = self.definitions(untyped.definitions)?;
         Ok(AST {
             definitions: new_defs,
@@ -454,7 +453,7 @@ impl Typer {
 ///
 /// Of course, this can potentially fail, in which case we'll return an error describing
 /// the kind of error that occurred.
-pub fn typer(untyped: AST<Ident, ()>) -> TypeResult<AST<Ident, Type>> {
+pub fn typer(untyped: AST<()>) -> TypeResult<AST<Type>> {
     let mut typer = Typer::new();
     typer.run(untyped)
 }
@@ -466,12 +465,11 @@ mod test {
     macro_rules! assert_types {
         ($input:expr) => {{
             use crate::simplifier;
-            use crate::{interner, lexer, parser};
+            use crate::{lexer, parser};
             let tokens = lexer::lex($input).unwrap();
             let ast = parser::parse(&tokens).unwrap();
-            let simplified = simplifier::simplify(ast);
-            let (interned_ast, dict) = interner::intern(simplified);
-            let res = typer(interned_ast)
+            let (simplified, dict) = simplifier::simplify(ast);
+            let res = typer(simplified)
                 .map_err(|e| e.replace_idents(|i| dict.get(i).unwrap().to_string()));
             assert!(
                 res.is_ok(),

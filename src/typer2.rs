@@ -1,17 +1,5 @@
-use crate::ast::{SchemeExpr, TypeExpr};
-use crate::interner::{Ident, IdentSource};
-use std::collections::HashMap;
-
-/// Represents a type we can assign to some expression
-///
-/// This happens to be completely isomorphic to the syntactic expressions of
-/// the possible types an expression can have, hence why we reuse the AST struct.
-type Type = TypeExpr<Ident>;
-
-/// Represents a scheme, i.e. a type with explicitly quantified variables
-///
-/// Similarly to `Type`, this is isomorphic to the syntactic expression.
-type Scheme = SchemeExpr<Ident>;
+use crate::simplifier::{Ident, IdentSource, Scheme, Type};
+use std::collections::{HashMap, HashSet};
 
 /// Represents an environment mapping names to schemes.
 ///
@@ -72,13 +60,13 @@ mod test {
 
     #[test]
     fn scoped_environment_works() {
-        let scheme_a: Scheme = SchemeExpr {
-            type_vars: Vec::new(),
-            typ: TypeExpr::I64,
+        let scheme_a: Scheme = Scheme {
+            type_vars: HashSet::new(),
+            typ: Type::I64,
         };
-        let scheme_b: Scheme = SchemeExpr {
-            type_vars: Vec::new(),
-            typ: TypeExpr::Strng,
+        let scheme_b: Scheme = Scheme {
+            type_vars: HashSet::new(),
+            typ: Type::Strng,
         };
         let mut env = ScopedEnv::new();
         let mut source = IdentSource::new();

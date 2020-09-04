@@ -3,8 +3,50 @@ use std::fmt;
 
 use peg;
 
-use crate::ast::{BinOp, SchemeExpr, TypeExpr};
 use crate::lexer::Token;
+
+/// Represents a binary operator we can use in arithmetic expressions
+#[derive(Debug, PartialEq)]
+pub enum BinOp {
+    /// The + operator
+    Add,
+    /// The - operator
+    Sub,
+    /// The * operator
+    Mul,
+    /// The / operator
+    Div,
+}
+/// Represents the syntactic form of a type
+///
+/// This is somewhat similar to the way we define our internal representation of types, modulo
+/// what kind of identifier we use. This will always try to represent what kind of types
+/// the user can write down in the source code, whereas our internal representation might diverge
+/// from that.
+#[derive(Clone, Debug, PartialEq)]
+pub enum TypeExpr {
+    /// A function A -> B
+    Function(Box<TypeExpr>, Box<TypeExpr>),
+    /// The primitive integer type
+    I64,
+    /// The primitive string type
+    Strng,
+    /// A reference to some identifier, e.g. `a`
+    TypeVar(String),
+}
+
+/// Represents an expression of a scheme, i.e. type with quantified polymorphic vars.
+///
+/// This is used to represent some declaration of a scheme, e.g. `{a} => a -> a`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SchemeExpr {
+    /// The polymorphic variables being quantified over
+    ///
+    /// They also have whatever kind of identifier we use for variable names.
+    pub type_vars: Vec<String>,
+    /// The expression being quantified over
+    pub typ: TypeExpr,
+}
 
 /// Represents the results of parsing out an expression
 #[derive(Debug, PartialEq)]
@@ -27,7 +69,7 @@ pub enum Expr {
 #[derive(Debug, PartialEq)]
 pub enum Definition {
     /// A definition assigning some type to some identifier
-    Type(String, SchemeExpr<String>),
+    Type(String, SchemeExpr),
     /// A definition assigning some expression to some identifier
     Val(String, Expr),
 }
@@ -50,11 +92,11 @@ peg::parser! {
         rule name() -> String
             = n:$[Name(_)] { n[0].get_name().unwrap().to_string() }
 
-        rule scheme() -> SchemeExpr<String>
+        rule scheme() -> SchemeExpr
             = [LeftBrace] vs:(name() ** [Comma]) [RightBrace] [FatArrow] t:typ() { SchemeExpr { type_vars: vs, typ: t } }
             / t:typ() { SchemeExpr { type_vars: Vec::new(), typ: t }}
 
-        rule typ() -> TypeExpr<String> = precedence!{
+        rule typ() -> TypeExpr = precedence!{
             a:@ [RightArrow] b:(@) { TypeExpr::Function(Box::new(a), Box::new(b)) }
             --
             [LeftParens] t:typ() [RightParens] { t }
@@ -62,7 +104,7 @@ peg::parser! {
             t:primitive_type() { t }
         }
 
-        rule primitive_type() -> TypeExpr<String>
+        rule primitive_type() -> TypeExpr
             = [TypeI64] { TypeExpr::I64 }
             / [TypeString] { TypeExpr::Strng }
 
