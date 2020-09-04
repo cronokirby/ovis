@@ -4,6 +4,7 @@ mod lexer;
 mod parser;
 mod simplifier;
 mod typer;
+mod typer2;
 
 use std::convert::TryFrom;
 use std::error::Error;
