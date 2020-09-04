@@ -24,6 +24,26 @@ impl Display for Ident {
     }
 }
 
+/// A struct providing us with an easy source of new identifiers
+#[derive(Clone)]
+pub struct IdentSource {
+    next: Ident,
+}
+
+impl IdentSource {
+    /// Create a new source of identifiers
+    pub fn new() -> Self {
+        IdentSource { next: Ident(0) }
+    }
+
+    /// Get the next identifier from this source
+    pub fn next(&mut self) -> Ident {
+        let ret = self.next;
+        self.next = self.next.succ();
+        ret
+    }
+}
+
 /// A mapping allowing us to retrieve a name for each identifier
 ///
 /// This is useful to be able to have nice error messages using variable
@@ -61,7 +81,7 @@ impl Dictionary {
 struct Interner {
     dict: Dictionary,
     lookup: HashMap<String, Ident>,
-    next: Ident,
+    source: IdentSource,
 }
 
 impl Interner {
@@ -71,15 +91,14 @@ impl Interner {
         Interner {
             dict: Dictionary::new(),
             lookup: HashMap::new(),
-            next: Ident(0),
+            source: IdentSource::new(),
         }
     }
 
     // Insert a new string, giving it a new identifier, and incrementing the state
     // of the identifier, and what not
     fn insert(&mut self, v: String) -> Ident {
-        let key = self.next;
-        self.next = self.next.succ();
+        let key = self.source.next();
         self.dict.insert(key, v.clone());
         self.lookup.insert(v, key);
         key
