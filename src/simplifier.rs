@@ -116,8 +116,8 @@ impl Interner {
 /// This allows us to pretty print certain parts of an AST without having ugly
 /// identifiers in the pretty part.
 pub struct WithDict<'a, A> {
-    view: &'a A,
-    dict: &'a Dictionary,
+    pub view: &'a A,
+    pub dict: &'a Dictionary,
 }
 
 impl<'a, A> WithDict<'a, A> {

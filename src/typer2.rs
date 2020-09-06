@@ -1,5 +1,6 @@
-use crate::simplifier::{Ident, IdentSource, Scheme, Type, AST, Definition, Expr};
+use crate::simplifier::{Definition, Expr, Ident, IdentSource, Scheme, Type, WithDict, AST};
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 
 /// A synonym for identifiers belonging to type variables
 type TypeVar = Ident;
@@ -180,6 +181,26 @@ impl Substitutable for ScopedEnv {
         }
     }
 }
+
+/// Represents some kind of error that can occur during type-checking
+pub enum TypeError {
+    /// An identifier being referenced has not been defined before
+    UndefinedName(Ident),
+}
+
+impl<'a> fmt::Display for WithDict<'a, TypeError> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.view {
+            TypeError::UndefinedName(n) => write!(
+                f,
+                "Identifier `{}` is undefined",
+                self.dict.get(*n).unwrap()
+            ),
+        }
+    }
+}
+
+pub type TypeResult<T> = Result<T, TypeError>;
 
 /// A constraint represents come kind of unfication that we know needs to happen.
 ///
