@@ -1,4 +1,4 @@
-use crate::simplifier::{Ident, IdentSource, Scheme, Type};
+use crate::simplifier::{Ident, IdentSource, Scheme, Type, AST, Definition, Expr};
 use std::collections::{HashMap, HashSet};
 
 /// A synonym for identifiers belonging to type variables
@@ -149,6 +149,18 @@ impl ScopedEnv {
         }
         self.scopes.pop();
     }
+
+    /// Generalize a type by closing over all the variables that are not in this environment
+    fn generalize(&self, typ: Type) -> Scheme {
+        let mut type_vars = HashSet::new();
+        typ.free_t_vars(&mut type_vars);
+        let mut scoped_vars = HashSet::new();
+        self.free_t_vars(&mut scoped_vars);
+        for v in scoped_vars {
+            type_vars.remove(&v);
+        }
+        Scheme { type_vars, typ }
+    }
 }
 
 impl Substitutable for ScopedEnv {
@@ -196,8 +208,32 @@ impl Constrainer {
         self.constraints.push((t1, t2));
     }
 
-    fn fresh_t_var(&mut self) -> TypeVar {
-        self.source.next()
+    /// Generate a fresh type variable
+    fn fresh_t_var(&mut self) -> Type {
+        Type::TypeVar(self.source.next())
+    }
+
+    /// Instantiate some scheme, replacing all polymorphic variables with concrete ones
+    fn instantiate(&mut self, scheme: &Scheme) -> Type {
+        let mut subst = Substitution::empty();
+        for v in &scheme.type_vars {
+            subst.with(*v, self.fresh_t_var())
+        }
+        let mut typ = scheme.typ.clone();
+        typ.subst(&subst);
+        typ
+    }
+
+    fn infer_expr(&mut self, expr: Expr) {
+        unimplemented!()
+    }
+
+    fn infer_definition(&mut self, def: Definition) {
+        unimplemented!()
+    }
+
+    fn infer(&mut self, expr: AST) {
+        unimplemented!()
     }
 }
 
