@@ -169,6 +169,38 @@ impl Substitutable for ScopedEnv {
     }
 }
 
+/// A constraint represents come kind of unfication that we know needs to happen.
+///
+/// The idea is to gather a bunch of constraints, usually between variables and
+/// concrete types, and then solve them later
+type Constraint = (Type, Type);
+
+/// The constrainer's job is to traverse the AST and gather constraints.
+///
+/// Constraints will look at the usage of certain types in order to tie together
+/// free type variables with concrete types that they're used as. The idea is that
+/// it's much easier to gather all this information over the whole tree, and then
+/// try and solve it with a concrete substitution with schemes later.
+struct Constrainer {
+    /// This gives us access to an environment mapping variables to schemes
+    env: ScopedEnv,
+    /// A collection of constraints we've managed to gather so far
+    constraints: Vec<Constraint>,
+    /// This gives us the next fresh type variable to use
+    source: IdentSource,
+}
+
+impl Constrainer {
+    /// Declare that two different types must have a unification
+    fn unify(&mut self, t1: Type, t2: Type) {
+        self.constraints.push((t1, t2));
+    }
+
+    fn fresh_t_var(&mut self) -> TypeVar {
+        self.source.next()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
