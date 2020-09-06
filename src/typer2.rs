@@ -245,16 +245,95 @@ impl Constrainer {
         typ
     }
 
-    fn infer_expr(&mut self, expr: Expr) {
-        unimplemented!()
+    fn lookup(&mut self, var: Var) -> TypeResult<Type> {
+        let scheme = self
+            .env
+            .lookup(var)
+            .ok_or(TypeError::UndefinedName(var))?
+            .clone();
+        Ok(self.instantiate(&scheme))
     }
 
-    fn infer_definition(&mut self, def: Definition) {
-        unimplemented!()
+    fn infer_expr(&mut self, expr: Expr) -> TypeResult<Type> {
+        match expr {
+            Expr::NumberLitt(_) => Ok(Type::I64),
+            Expr::StringLitt(_) => Ok(Type::Strng),
+            Expr::Name(n) => self.lookup(n),
+            Expr::Negate(e) => {
+                let te = self.infer_expr(*e)?;
+                let tv = self.fresh_t_var();
+                // We need whatever this operation looks like to conform with I64 -> I64
+                let expected = Type::Function(Box::new(Type::I64), Box::new(Type::I64));
+                let inferred = Type::Function(Box::new(te), Box::new(tv.clone()));
+                self.unify(expected, inferred);
+                Ok(tv)
+            }
+            Expr::Binary(_, l, r) => {
+                let tl = self.infer_expr(*l)?;
+                let tr = self.infer_expr(*r)?;
+                let tv = self.fresh_t_var();
+                // Whatever the shape of things are, we need it to conform with I64 -> I64 -> I64
+                // All of our operations are of this type, for now
+                let expected = Type::Function(
+                    Box::new(Type::I64),
+                    Box::new(Type::Function(Box::new(Type::I64), Box::new(Type::I64))),
+                );
+                let inferred = Type::Function(
+                    Box::new(tl),
+                    Box::new(Type::Function(Box::new(tr), Box::new(tv.clone()))),
+                );
+                self.unify(expected, inferred);
+                Ok(tv)
+            }
+            Expr::Apply(f, e) => {
+                let tf = self.infer_expr(*f)?;
+                let te = self.infer_expr(*e)?;
+                let tv = self.fresh_t_var();
+                self.unify(tf, Type::Function(Box::new(te), Box::new(tv.clone())));
+                Ok(tv)
+            }
+            Expr::Let(defs, e) => {
+                self.env.enter();
+                for d in defs {
+                    self.infer_definition(d)?;
+                }
+                let te = self.infer_expr(*e)?;
+                self.env.exit();
+                Ok(te)
+            }
+            Expr::Lambda(n, _, e) => {
+                let tv = self.fresh_t_var();
+                self.env.enter();
+                let scheme = Scheme {
+                    type_vars: HashSet::new(),
+                    typ: tv.clone(),
+                };
+                self.env.extend(n, scheme);
+                let t = self.infer_expr(*e)?;
+                self.env.exit();
+                Ok(Type::Function(Box::new(tv), Box::new(t)))
+            }
+        }
     }
 
-    fn infer(&mut self, expr: AST) {
-        unimplemented!()
+    fn infer_definition(&mut self, def: Definition) -> TypeResult<()> {
+        match def {
+            // TODO: Handle declared types
+            Definition::Type(_, _) => Ok(()),
+            Definition::Val(n, _, e) => {
+                let t = self.infer_expr(e)?;
+                let scheme = self.env.generalize(t);
+                self.env.extend(n, scheme);
+                Ok(())
+            }
+        }
+    }
+
+    fn infer(&mut self, ast: AST) -> TypeResult<()> {
+        for def in ast.definitions {
+            self.infer_definition(def)?;
+        }
+        Ok(())
     }
 }
 
