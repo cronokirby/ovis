@@ -434,14 +434,14 @@ fn substitute_ast(subst: &Substitution, ast: AST<Scheme>) -> AST<Scheme> {
         match expr {
             Expr::Lambda(n, mut t, e) => {
                 t.subst(subst);
-                Expr::Lambda(n, t, e)
+                Expr::Lambda(n, t, Box::new(substitute_expr(subst, *e)))
             }
             Expr::Let(defs, e) => {
                 let mut definitions = Vec::new();
                 for d in defs {
                     definitions.push(substitute_definition(subst, d));
                 }
-                Expr::Let(definitions, e)
+                Expr::Let(definitions, Box::new(substitute_expr(subst, *e)))
             }
             e => e,
         }
@@ -454,7 +454,7 @@ fn substitute_ast(subst: &Substitution, ast: AST<Scheme>) -> AST<Scheme> {
         match definition {
             Definition::Val(n, mut t, e) => {
                 t.subst(subst);
-                Definition::Val(n, t, e)
+                Definition::Val(n, t, substitute_expr(subst, e))
             }
             // By the time we get here, the type definitions have already been removed
             Definition::Type(_, _) => unreachable!(),

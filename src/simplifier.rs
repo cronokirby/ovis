@@ -146,7 +146,7 @@ impl<'a, A> WithDict<'a, A> {
     }
 }
 
-trait DisplayWithDict: Sized {
+pub trait DisplayWithDict: Sized {
     fn fmt_dict<'a>(v: WithDict<'a, Self>, f: &mut fmt::Formatter<'_>) -> fmt::Result;
 }
 
