@@ -186,15 +186,30 @@ impl Substitutable for ScopedEnv {
 pub enum TypeError {
     /// An identifier being referenced has not been defined before
     UndefinedName(Ident),
+    /// A type contains a type variable, so unifying that variable with that type
+    /// would require the construction of an infinite type.
+    InfiniteType(TypeVar, Type),
+    /// Two types could not be unified
+    UnificationMismatch(Type, Type),
 }
 
 impl<'a> fmt::Display for WithDict<'a, TypeError> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.view {
-            TypeError::UndefinedName(n) => write!(
+            TypeError::UndefinedName(n) => {
+                write!(f, "Identifier `{}` is undefined", self.dict.get_or_str(*n))
+            }
+            TypeError::InfiniteType(v, t) => write!(
                 f,
-                "Identifier `{}` is undefined",
-                self.dict.get(*n).unwrap()
+                "Tried to unify infinite type: {} ~ {}",
+                self.dict.get_or_str(*v),
+                self.with_view(t)
+            ),
+            TypeError::UnificationMismatch(t1, t2) => write!(
+                f,
+                "Failed to unify: {} ~ {}",
+                self.with_view(t1),
+                self.with_view(t2)
             ),
         }
     }
@@ -332,6 +347,57 @@ impl Constrainer {
     fn infer(&mut self, ast: AST) -> TypeResult<()> {
         for def in ast.definitions {
             self.infer_definition(def)?;
+        }
+        Ok(())
+    }
+}
+
+/// The solver is responsible for finding a substitution that solves all of our constraints
+struct Solver {
+    /// The current substitution we've managed to construct
+    subst: Substitution,
+}
+
+impl Solver {
+    /// Try and bind a variable to a given type, returning the substitution making this work
+    ///
+    /// This will error out of the type features the type variable, in which case only an infinite
+    /// type would solve that constraint.
+    fn bind(&mut self, var: TypeVar, typ: Type) -> TypeResult<()> {
+        if typ == Type::TypeVar(var) {
+            Ok(())
+        } else {
+            let mut ftvs = HashSet::new();
+            typ.free_t_vars(&mut ftvs);
+            if ftvs.contains(&var) {
+                Err(TypeError::InfiniteType(var, typ))
+            } else {
+                self.subst.with(var, typ);
+                Ok(())
+            }
+        }
+    }
+
+    /// Try and unify two different types
+    fn unify(&mut self, t1: Type, t2: Type) -> TypeResult<()> {
+        match (t1, t2) {
+            (t1, t2) if t1 == t2 => Ok(()),
+            (Type::TypeVar(v), t) => self.bind(v, t),
+            (t, Type::TypeVar(v)) => self.bind(v, t),
+            (Type::Function(l1, r1), Type::Function(l2, r2)) => {
+                self.unify(*l1, *l2)?;
+                self.unify(*r1, *r2)
+            }
+            (t1, t2) => Err(TypeError::UnificationMismatch(t1, t2)),
+        }
+    }
+
+    /// Try and solve a collection of constraints
+    fn solve(&mut self, constraints: Vec<Constraint>) -> TypeResult<()> {
+        for (mut t1, mut t2) in constraints {
+            t1.subst(&self.subst);
+            t2.subst(&self.subst);
+            self.unify(t1, t2)?;
         }
         Ok(())
     }

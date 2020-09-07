@@ -72,6 +72,14 @@ impl Dictionary {
         // I wonder if we can avoid the map here
         self.map.get(&ident).map(|t| t.as_ref())
     }
+
+    /// Get the string corresponding to an identifier or display the identifier directly
+    pub fn get_or_str(&self, ident: Ident) -> String {
+        match self.get(ident) {
+            None => format!("{}", ident),
+            Some(x) => x.to_string(),
+        }
+    }
 }
 
 /// Represents a bidirectional mapping
@@ -125,7 +133,7 @@ impl<'a, A> WithDict<'a, A> {
         WithDict { view, dict }
     }
 
-    fn with_view<B>(&self, view: &'a B) -> WithDict<'a, B> {
+    pub fn with_view<B>(&self, view: &'a B) -> WithDict<'a, B> {
         WithDict {
             view,
             dict: self.dict,
