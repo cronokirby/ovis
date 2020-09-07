@@ -16,7 +16,7 @@ pub struct Ident(u64);
 impl Ident {
     // Return the next identifier after this one
     fn succ(self) -> Self {
-        Ident(self.0 + 1)
+        Ident(self.0 + 2)
     }
 }
 
@@ -34,8 +34,12 @@ pub struct IdentSource {
 
 impl IdentSource {
     /// Create a new source of identifiers
-    pub fn new() -> Self {
+    pub fn even() -> Self {
         IdentSource { next: Ident(0) }
+    }
+
+    pub fn odd() -> Self {
+        IdentSource { next: Ident(1) }
     }
 
     /// Get the next identifier from this source
@@ -96,7 +100,7 @@ impl Interner {
         Interner {
             dict: Dictionary::new(),
             lookup: HashMap::new(),
-            source: IdentSource::new(),
+            source: IdentSource::even(),
         }
     }
 
@@ -123,6 +127,7 @@ impl Interner {
 ///
 /// This allows us to pretty print certain parts of an AST without having ugly
 /// identifiers in the pretty part.
+#[derive(Debug)]
 pub struct WithDict<'a, A> {
     pub view: &'a A,
     pub dict: &'a Dictionary,
@@ -138,6 +143,16 @@ impl<'a, A> WithDict<'a, A> {
             view,
             dict: self.dict,
         }
+    }
+}
+
+trait DisplayWithDict: Sized {
+    fn fmt_dict<'a>(v: WithDict<'a, Self>, f: &mut fmt::Formatter<'_>) -> fmt::Result;
+}
+
+impl<T: fmt::Display> DisplayWithDict for T {
+    fn fmt_dict<'a>(v: WithDict<'a, Self>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", v.view)
     }
 }
 
@@ -176,16 +191,14 @@ pub enum Expr<T = Unknown> {
     Apply(Box<Expr<T>>, Box<Expr<T>>),
 }
 
-impl<'a, T: fmt::Display> fmt::Display for WithDict<'a, Expr<T>> {
+impl<'a, T: DisplayWithDict> fmt::Display for WithDict<'a, Expr<T>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.view {
-            Expr::Lambda(n, t, e) => write!(
-                f,
-                "(λ (: {} {}) {})",
-                self.dict.get(*n).unwrap(),
-                t,
-                self.with_view(e.as_ref())
-            ),
+            Expr::Lambda(n, t, e) => {
+                write!(f, "(λ (: {} ", self.dict.get_or_str(*n))?;
+                DisplayWithDict::fmt_dict(self.with_view(t), f)?;
+                write!(f, ") {})", self.with_view(e.as_ref()))
+            }
             Expr::Name(n) => write!(f, "{}", self.dict.get(*n).unwrap()),
             Expr::NumberLitt(i) => write!(f, "{}", i),
             Expr::StringLitt(s) => write!(f, "\"{}\"", s),
@@ -245,7 +258,7 @@ impl<'a> fmt::Display for WithDict<'a, Type> {
                 self.with_view(t1.as_ref()),
                 self.with_view(t2.as_ref())
             ),
-            Type::TypeVar(n) => write!(f, "{}", self.dict.get(*n).unwrap()),
+            Type::TypeVar(n) => write!(f, "{}", self.dict.get_or_str(*n)),
             Type::I64 => write!(f, "I64"),
             Type::Strng => write!(f, "String"),
         }
@@ -265,6 +278,16 @@ pub struct Scheme {
     pub typ: Type,
 }
 
+impl Scheme {
+    /// Create a new scheme with no bound variables over a certain type
+    pub fn over(typ: Type) -> Self {
+        Scheme {
+            type_vars: HashSet::new(),
+            typ,
+        }
+    }
+}
+
 impl<'a> fmt::Display for WithDict<'a, Scheme> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let view = self.view;
@@ -273,9 +296,9 @@ impl<'a> fmt::Display for WithDict<'a, Scheme> {
             let mut i = 0;
             for v in &view.type_vars {
                 if i == 0 {
-                    write!(f, "{}", self.dict.get(*v).unwrap())?;
+                    write!(f, "{}", self.dict.get_or_str(*v))?;
                 } else {
-                    write!(f, " {}", self.dict.get(*v).unwrap())?;
+                    write!(f, " {}", self.dict.get_or_str(*v))?;
                 }
                 i += 1;
             }
@@ -283,6 +306,12 @@ impl<'a> fmt::Display for WithDict<'a, Scheme> {
         } else {
             write!(f, "{}", self.with_view(&view.typ))
         }
+    }
+}
+
+impl DisplayWithDict for Scheme {
+    fn fmt_dict<'a>(v: WithDict<'a, Self>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", v)
     }
 }
 
@@ -298,7 +327,7 @@ pub enum Definition<T = Unknown> {
     Val(Ident, T, Expr<T>),
 }
 
-impl<'a, T: fmt::Display> fmt::Display for WithDict<'a, Definition<T>> {
+impl<'a, T: DisplayWithDict> fmt::Display for WithDict<'a, Definition<T>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.view {
             Definition::Type(n, s) => write!(
@@ -307,13 +336,11 @@ impl<'a, T: fmt::Display> fmt::Display for WithDict<'a, Definition<T>> {
                 self.dict.get(*n).unwrap(),
                 self.with_view(s)
             ),
-            Definition::Val(n, t, e) => write!(
-                f,
-                "(= (: {} {}) {})",
-                self.dict.get(*n).unwrap(),
-                t,
-                self.with_view(e)
-            ),
+            Definition::Val(n, t, e) => {
+                write!(f, "(= (: {} ", self.dict.get_or_str(*n))?;
+                DisplayWithDict::fmt_dict(self.with_view(t), f)?;
+                write!(f, ") {})", self.with_view(e))
+            }
         }
     }
 }
@@ -328,7 +355,7 @@ pub struct AST<T = Unknown> {
     pub definitions: Vec<Definition<T>>,
 }
 
-impl<'a, T: fmt::Display> fmt::Display for WithDict<'a, AST<T>> {
+impl<'a, T: DisplayWithDict> fmt::Display for WithDict<'a, AST<T>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "(ast")?;
         for def in &self.view.definitions {

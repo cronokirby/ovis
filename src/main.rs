@@ -4,6 +4,7 @@ mod simplifier;
 mod typer;
 mod typer2;
 
+use simplifier::WithDict;
 use std::convert::TryFrom;
 use std::error::Error;
 use std::fmt;
@@ -18,7 +19,7 @@ enum CompileError {
     /// An error occurring while parsing
     ParseError(parser::ParseError),
     /// An error occurring while typing
-    TypeError(typer::TypeError<String>),
+    TypeError(String),
 }
 
 impl fmt::Display for CompileError {
@@ -38,13 +39,13 @@ impl fmt::Display for CompileError {
     }
 }
 
-impl Error for CompileError {
+impl<'a> Error for CompileError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             CompileError::CouldntRead(_) => None,
             CompileError::LexError(_) => None,
             CompileError::ParseError(e) => Some(e),
-            CompileError::TypeError(e) => Some(e),
+            CompileError::TypeError(_) => None,
         }
     }
 }
@@ -61,9 +62,9 @@ impl From<parser::ParseError> for CompileError {
     }
 }
 
-impl From<typer::TypeError<String>> for CompileError {
-    fn from(e: typer::TypeError<String>) -> Self {
-        CompileError::TypeError(e)
+impl<'a> From<WithDict<'a, typer2::TypeError>> for CompileError {
+    fn from(e: WithDict<'a, typer2::TypeError>) -> Self {
+        CompileError::TypeError(format!("{}", e))
     }
 }
 
@@ -141,8 +142,8 @@ fn real_main(args: Args) -> Result<(), CompileError> {
         );
         return Ok(());
     }
-    let typed = typer::typer(simplified)
-        .map_err(|e| e.replace_idents(|i| dict.get(i).unwrap().to_string()))?;
+    let typed = typer2::typer(simplified)
+        .map_err(|e| CompileError::from(simplifier::WithDict::new(&e, &dict)))?;
     if args.stage <= Stage::Type {
         println!("Typed:\n\n{}", simplifier::WithDict::new(&typed, &dict));
         return Ok(());

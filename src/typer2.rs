@@ -183,6 +183,7 @@ impl Substitutable for ScopedEnv {
 }
 
 /// Represents some kind of error that can occur during type-checking
+#[derive(Debug)]
 pub enum TypeError {
     /// An identifier being referenced has not been defined before
     UndefinedName(Ident),
@@ -239,6 +240,17 @@ struct Constrainer {
 }
 
 impl Constrainer {
+    fn new() -> Self {
+        let env = ScopedEnv::new();
+        let constraints = Vec::new();
+        let source = IdentSource::odd();
+        Constrainer {
+            env,
+            constraints,
+            source,
+        }
+    }
+
     /// Declare that two different types must have a unification
     fn unify(&mut self, t1: Type, t2: Type) {
         self.constraints.push((t1, t2));
@@ -269,23 +281,23 @@ impl Constrainer {
         Ok(self.instantiate(&scheme))
     }
 
-    fn infer_expr(&mut self, expr: Expr) -> TypeResult<Type> {
+    fn infer_expr(&mut self, expr: Expr) -> TypeResult<(Type, Expr<Scheme>)> {
         match expr {
-            Expr::NumberLitt(_) => Ok(Type::I64),
-            Expr::StringLitt(_) => Ok(Type::Strng),
-            Expr::Name(n) => self.lookup(n),
+            Expr::NumberLitt(n) => Ok((Type::I64, Expr::NumberLitt(n))),
+            Expr::StringLitt(s) => Ok((Type::Strng, Expr::StringLitt(s))),
+            Expr::Name(n) => Ok((self.lookup(n)?, Expr::Name(n))),
             Expr::Negate(e) => {
-                let te = self.infer_expr(*e)?;
+                let (te, re) = self.infer_expr(*e)?;
                 let tv = self.fresh_t_var();
                 // We need whatever this operation looks like to conform with I64 -> I64
                 let expected = Type::Function(Box::new(Type::I64), Box::new(Type::I64));
                 let inferred = Type::Function(Box::new(te), Box::new(tv.clone()));
                 self.unify(expected, inferred);
-                Ok(tv)
+                Ok((tv, Expr::Negate(Box::new(re))))
             }
-            Expr::Binary(_, l, r) => {
-                let tl = self.infer_expr(*l)?;
-                let tr = self.infer_expr(*r)?;
+            Expr::Binary(op, l, r) => {
+                let (tl, rl) = self.infer_expr(*l)?;
+                let (tr, rr) = self.infer_expr(*r)?;
                 let tv = self.fresh_t_var();
                 // Whatever the shape of things are, we need it to conform with I64 -> I64 -> I64
                 // All of our operations are of this type, for now
@@ -298,57 +310,65 @@ impl Constrainer {
                     Box::new(Type::Function(Box::new(tr), Box::new(tv.clone()))),
                 );
                 self.unify(expected, inferred);
-                Ok(tv)
+                Ok((tv, Expr::Binary(op, Box::new(rl), Box::new(rr))))
             }
             Expr::Apply(f, e) => {
-                let tf = self.infer_expr(*f)?;
-                let te = self.infer_expr(*e)?;
+                let (tf, rf) = self.infer_expr(*f)?;
+                let (te, re) = self.infer_expr(*e)?;
                 let tv = self.fresh_t_var();
                 self.unify(tf, Type::Function(Box::new(te), Box::new(tv.clone())));
-                Ok(tv)
+                Ok((tv, Expr::Apply(Box::new(rf), Box::new(re))))
             }
             Expr::Let(defs, e) => {
                 self.env.enter();
+                let mut new_defs: Vec<Definition<Scheme>> = Vec::new();
                 for d in defs {
-                    self.infer_definition(d)?;
+                    if let Some(d) = self.infer_definition(d)? {
+                        new_defs.push(d);
+                    }
                 }
-                let te = self.infer_expr(*e)?;
+                let (te, re) = self.infer_expr(*e)?;
                 self.env.exit();
-                Ok(te)
+                Ok((te, Expr::Let(new_defs, Box::new(re))))
             }
             Expr::Lambda(n, _, e) => {
                 let tv = self.fresh_t_var();
                 self.env.enter();
-                let scheme = Scheme {
-                    type_vars: HashSet::new(),
-                    typ: tv.clone(),
-                };
-                self.env.extend(n, scheme);
-                let t = self.infer_expr(*e)?;
+                let scheme = Scheme::over(tv.clone());
+                self.env.extend(n, scheme.clone());
+                let (te, re) = self.infer_expr(*e)?;
                 self.env.exit();
-                Ok(Type::Function(Box::new(tv), Box::new(t)))
+                Ok((
+                    Type::Function(Box::new(tv), Box::new(te)),
+                    Expr::Lambda(n, scheme, Box::new(re)),
+                ))
             }
         }
     }
 
-    fn infer_definition(&mut self, def: Definition) -> TypeResult<()> {
+    fn infer_definition(&mut self, def: Definition) -> TypeResult<Option<Definition<Scheme>>> {
         match def {
             // TODO: Handle declared types
-            Definition::Type(_, _) => Ok(()),
+            Definition::Type(_, _) => Ok(None),
             Definition::Val(n, _, e) => {
-                let t = self.infer_expr(e)?;
-                let scheme = self.env.generalize(t);
-                self.env.extend(n, scheme);
-                Ok(())
+                let (te, re) = self.infer_expr(e)?;
+                let scheme = self.env.generalize(te);
+                self.env.extend(n, scheme.clone());
+                Ok(Some(Definition::Val(n, scheme, re)))
             }
         }
     }
 
-    fn infer(&mut self, ast: AST) -> TypeResult<()> {
+    fn infer(&mut self, ast: AST) -> TypeResult<AST<Scheme>> {
+        let mut new_defs = Vec::new();
         for def in ast.definitions {
-            self.infer_definition(def)?;
+            if let Some(d) = self.infer_definition(def)? {
+                new_defs.push(d);
+            }
         }
-        Ok(())
+        Ok(AST {
+            definitions: new_defs,
+        })
     }
 }
 
@@ -359,6 +379,12 @@ struct Solver {
 }
 
 impl Solver {
+    fn new() -> Self {
+        Solver {
+            subst: Substitution::empty(),
+        }
+    }
+
     /// Try and bind a variable to a given type, returning the substitution making this work
     ///
     /// This will error out of the type features the type variable, in which case only an infinite
@@ -403,6 +429,57 @@ impl Solver {
     }
 }
 
+fn substitute_ast(subst: &Substitution, ast: AST<Scheme>) -> AST<Scheme> {
+    fn substitute_expr(subst: &Substitution, expr: Expr<Scheme>) -> Expr<Scheme> {
+        match expr {
+            Expr::Lambda(n, mut t, e) => {
+                t.subst(subst);
+                Expr::Lambda(n, t, e)
+            }
+            Expr::Let(defs, e) => {
+                let mut definitions = Vec::new();
+                for d in defs {
+                    definitions.push(substitute_definition(subst, d));
+                }
+                Expr::Let(definitions, e)
+            }
+            e => e,
+        }
+    }
+
+    fn substitute_definition(
+        subst: &Substitution,
+        definition: Definition<Scheme>,
+    ) -> Definition<Scheme> {
+        match definition {
+            Definition::Val(n, mut t, e) => {
+                t.subst(subst);
+                Definition::Val(n, t, e)
+            }
+            // By the time we get here, the type definitions have already been removed
+            Definition::Type(_, _) => unreachable!(),
+        }
+    }
+
+    let mut definitions = Vec::new();
+    for d in ast.definitions {
+        definitions.push(substitute_definition(subst, d));
+    }
+    AST { definitions }
+}
+
+/// Try and assign types to a syntax tree
+///
+/// Of course, this can potentially fail, in which case we'll return an error describing
+/// the kind of error that occurred.
+pub fn typer(untyped: AST) -> TypeResult<AST<Scheme>> {
+    let mut constrainer = Constrainer::new();
+    let partially_typed = constrainer.infer(untyped)?;
+    let mut solver = Solver::new();
+    solver.solve(constrainer.constraints)?;
+    Ok(substitute_ast(&solver.subst, partially_typed))
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -418,7 +495,7 @@ mod test {
             typ: Type::Strng,
         };
         let mut env = ScopedEnv::new();
-        let mut source = IdentSource::new();
+        let mut source = IdentSource::odd();
         let a = source.next();
         let b = source.next();
 
