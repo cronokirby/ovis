@@ -1,10 +1,7 @@
 mod lexer;
 mod parser;
 mod simplifier;
-mod typer;
-mod typer2;
 
-use simplifier::WithDict;
 use std::convert::TryFrom;
 use std::error::Error;
 use std::fmt;
@@ -18,8 +15,6 @@ enum CompileError {
     LexError(Vec<lexer::LexError>),
     /// An error occurring while parsing
     ParseError(parser::ParseError),
-    /// An error occurring while typing
-    TypeError(String),
 }
 
 impl fmt::Display for CompileError {
@@ -34,7 +29,6 @@ impl fmt::Display for CompileError {
                 Ok(())
             }
             CompileError::ParseError(e) => writeln!(f, "Parse Error: {}", e),
-            CompileError::TypeError(e) => writeln!(f, "Type Error: {}", e),
         }
     }
 }
@@ -45,7 +39,6 @@ impl<'a> Error for CompileError {
             CompileError::CouldntRead(_) => None,
             CompileError::LexError(_) => None,
             CompileError::ParseError(e) => Some(e),
-            CompileError::TypeError(_) => None,
         }
     }
 }
@@ -62,12 +55,6 @@ impl From<parser::ParseError> for CompileError {
     }
 }
 
-impl<'a> From<WithDict<'a, typer2::TypeError>> for CompileError {
-    fn from(e: WithDict<'a, typer2::TypeError>) -> Self {
-        CompileError::TypeError(format!("{}", e))
-    }
-}
-
 #[derive(Debug, PartialEq, PartialOrd)]
 /// Represents the stage up to which the user would like us to go
 enum Stage {
@@ -77,8 +64,6 @@ enum Stage {
     Parse,
     /// The user wants us to stop after simplifying the parse tree (and thus parsing)
     Simplify,
-    /// The user wants us to stop after type checking (and thus simplifying)
-    Type,
 }
 
 impl TryFrom<&str> for Stage {
@@ -89,7 +74,6 @@ impl TryFrom<&str> for Stage {
             "lex" => Ok(Stage::Lex),
             "parse" => Ok(Stage::Parse),
             "simplify" => Ok(Stage::Simplify),
-            "type" => Ok(Stage::Type),
             _ => Err(()),
         }
     }
@@ -140,12 +124,6 @@ fn real_main(args: Args) -> Result<(), CompileError> {
             "Simplified:\n\n{}",
             simplifier::WithDict::new(&simplified, &dict)
         );
-        return Ok(());
-    }
-    let typed = typer2::typer(simplified)
-        .map_err(|e| CompileError::from(simplifier::WithDict::new(&e, &dict)))?;
-    if args.stage <= Stage::Type {
-        println!("Typed:\n\n{}", simplifier::WithDict::new(&typed, &dict));
         return Ok(());
     }
     Ok(())
