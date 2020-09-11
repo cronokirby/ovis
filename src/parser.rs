@@ -94,8 +94,7 @@ impl fmt::Display for SchemeExpr {
 /// Represents the results of parsing out an expression
 #[derive(Debug, PartialEq)]
 pub enum Expr {
-    /// A lambda introducing a single name, potentially
-    /// with a type annotation, and having a body as another expression
+    /// A lambda introducing multiple names, that will be bound inside an expression
     Lambda(Vec<String>, Box<Expr>),
     /// A let expression, with multiple definitions before
     /// a final expression using those definitions

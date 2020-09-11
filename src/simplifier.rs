@@ -38,10 +38,6 @@ impl IdentSource {
         IdentSource { next: Ident(0) }
     }
 
-    pub fn odd() -> Self {
-        IdentSource { next: Ident(1) }
-    }
-
     /// Get the next identifier from this source
     pub fn next(&mut self) -> Ident {
         let ret = self.next;
@@ -146,16 +142,6 @@ impl<'a, A> WithDict<'a, A> {
     }
 }
 
-pub trait DisplayWithDict: Sized {
-    fn fmt_dict<'a>(v: WithDict<'a, Self>, f: &mut fmt::Formatter<'_>) -> fmt::Result;
-}
-
-impl<T: fmt::Display> DisplayWithDict for T {
-    fn fmt_dict<'a>(v: WithDict<'a, Self>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", v.view)
-    }
-}
-
 /// We simply reuse the binary operations provided by the parser
 pub type BinOp = parser::BinOp;
 
@@ -171,12 +157,12 @@ impl fmt::Display for Unknown {
 
 /// Represents a single expression in our language
 #[derive(Debug, PartialEq)]
-pub enum Expr<T = Unknown> {
+pub enum Expr {
     /// A lambda abstraction / function litteral
-    Lambda(Ident, T, Box<Expr<T>>),
+    Lambda(Ident, Box<Expr>),
     /// A let expression, where we have a sequence of definitions bound before
     /// an expression.
-    Let(Vec<Definition<T>>, Box<Expr<T>>),
+    Let(Vec<Definition>, Box<Expr>),
     /// A reference to a variable name or definition
     Name(Ident),
     /// A reference to a positive number
@@ -184,21 +170,22 @@ pub enum Expr<T = Unknown> {
     /// A reference to a string litteral
     StringLitt(String),
     /// A binary operation between expressions
-    Binary(BinOp, Box<Expr<T>>, Box<Expr<T>>),
+    Binary(BinOp, Box<Expr>, Box<Expr>),
     /// Unary negation of an expression
-    Negate(Box<Expr<T>>),
+    Negate(Box<Expr>),
     /// Represents the application of one function to an argument
-    Apply(Box<Expr<T>>, Box<Expr<T>>),
+    Apply(Box<Expr>, Box<Expr>),
 }
 
-impl<'a, T: DisplayWithDict> fmt::Display for WithDict<'a, Expr<T>> {
+impl<'a> fmt::Display for WithDict<'a, Expr> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.view {
-            Expr::Lambda(n, t, e) => {
-                write!(f, "(λ (: {} ", self.dict.get_or_str(*n))?;
-                DisplayWithDict::fmt_dict(self.with_view(t), f)?;
-                write!(f, ") {})", self.with_view(e.as_ref()))
-            }
+            Expr::Lambda(n, e) => write!(
+                f,
+                "(λ {} {})",
+                self.dict.get_or_str(*n),
+                self.with_view(e.as_ref())
+            ),
             Expr::Name(n) => write!(f, "{}", self.dict.get(*n).unwrap()),
             Expr::NumberLitt(i) => write!(f, "{}", i),
             Expr::StringLitt(s) => write!(f, "\"{}\"", s),
@@ -309,38 +296,29 @@ impl<'a> fmt::Display for WithDict<'a, Scheme> {
     }
 }
 
-impl DisplayWithDict for Scheme {
-    fn fmt_dict<'a>(v: WithDict<'a, Self>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", v)
-    }
-}
-
 /// Represents a definition or annotation
 ///
 /// A definition assigns a name to an expression, and a type annotation assigns
 /// an explicit type to a name. Type annotations are optional in our language.
 #[derive(Debug, PartialEq)]
-pub enum Definition<T = Unknown> {
-    /// Represents an annotation of a name with a given type
-    Type(Ident, Scheme),
+pub enum Definition {
     /// Represents the definition of name, with its corresponding expression
-    Val(Ident, T, Expr<T>),
+    Val(Ident, Option<Scheme>, Expr),
 }
 
-impl<'a, T: DisplayWithDict> fmt::Display for WithDict<'a, Definition<T>> {
+impl<'a> fmt::Display for WithDict<'a, Definition> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.view {
-            Definition::Type(n, s) => write!(
-                f,
-                "(: {} {})",
-                self.dict.get(*n).unwrap(),
-                self.with_view(s)
-            ),
-            Definition::Val(n, t, e) => {
-                write!(f, "(= (: {} ", self.dict.get_or_str(*n))?;
-                DisplayWithDict::fmt_dict(self.with_view(t), f)?;
-                write!(f, ") {})", self.with_view(e))
-            }
+            Definition::Val(n, t, e) => match t {
+                None => write!(f, "(= {} {})", self.dict.get_or_str(*n), self.with_view(e)),
+                Some(t) => write!(
+                    f,
+                    "(= (: {} {}) {})",
+                    self.dict.get_or_str(*n),
+                    self.with_view(t),
+                    self.with_view(e)
+                ),
+            },
         }
     }
 }
@@ -351,11 +329,11 @@ impl<'a, T: DisplayWithDict> fmt::Display for WithDict<'a, Definition<T>> {
 ///
 /// A program is just a sequence of value or type annotations
 #[derive(Debug, PartialEq)]
-pub struct AST<T = Unknown> {
-    pub definitions: Vec<Definition<T>>,
+pub struct AST {
+    pub definitions: Vec<Definition>,
 }
 
-impl<'a, T: DisplayWithDict> fmt::Display for WithDict<'a, AST<T>> {
+impl<'a> fmt::Display for WithDict<'a, AST> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "(ast")?;
         for def in &self.view.definitions {
@@ -414,26 +392,39 @@ impl Simplifier {
             parser::Expr::Lambda(bindings, body) => {
                 let mut seed = self.expr(*body);
                 for name in bindings.into_iter().rev() {
-                    seed = Expr::Lambda(self.interner.ident(name), Unknown, Box::new(seed))
+                    seed = Expr::Lambda(self.interner.ident(name), Box::new(seed))
                 }
                 seed
             }
         }
     }
 
-    fn definition(&mut self, def: parser::Definition) -> Definition {
-        match def {
-            parser::Definition::Type(name, scheme) => {
-                Definition::Type(self.interner.ident(name), self.scheme(scheme))
-            }
-            parser::Definition::Val(name, expr) => {
-                Definition::Val(self.interner.ident(name), Unknown, self.expr(expr))
+    fn definitions(&mut self, defs: Vec<parser::Definition>) -> Vec<Definition> {
+        let mut map: HashMap<Ident, Scheme> = HashMap::new();
+        for def in &defs {
+            match def {
+                parser::Definition::Type(name, scheme) => {
+                    let ident = self.interner.ident(name.to_string());
+                    map.insert(ident, self.scheme(scheme.clone()));
+                }
+                _ => {}
             }
         }
-    }
-
-    fn definitions(&mut self, defs: Vec<parser::Definition>) -> Vec<Definition> {
-        defs.into_iter().map(|x| self.definition(x)).collect()
+        let mut res = Vec::new();
+        for def in defs {
+            match def {
+                parser::Definition::Val(name, expr) => {
+                    let ident = self.interner.ident(name);
+                    res.push(Definition::Val(
+                        ident,
+                        map.get(&ident).cloned(),
+                        self.expr(expr),
+                    ))
+                }
+                _ => {}
+            }
+        }
+        res
     }
 
     fn ast(&mut self, parsed: parser::AST) -> AST {
