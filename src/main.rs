@@ -1,7 +1,9 @@
+mod interner;
 mod lexer;
 mod parser;
 mod simplifier;
 
+use interner::WithDict;
 use std::convert::TryFrom;
 use std::error::Error;
 use std::fmt;
@@ -120,10 +122,7 @@ fn real_main(args: Args) -> Result<(), CompileError> {
     }
     let (simplified, dict) = simplifier::simplify(ast);
     if args.stage <= Stage::Simplify {
-        println!(
-            "Simplified:\n\n{}",
-            simplifier::WithDict::new(&simplified, &dict)
-        );
+        println!("Simplified:\n\n{}", WithDict::new(&simplified, &dict));
         return Ok(());
     }
     Ok(())

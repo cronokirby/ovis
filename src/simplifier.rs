@@ -1,146 +1,8 @@
+use crate::interner::{Dictionary, DisplayWithDict, Ident, Interner};
 use crate::parser;
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
-use std::hash::Hash;
-
-use std::fmt::{Display, Formatter, Result as FmtResult};
-
-/// A name we can use for an identifier.
-///
-/// This idea is that anywhere we could have used a string based identifier,
-/// we can replace that exact identifier with this instead, saving on space.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub struct Ident(u64);
-
-impl Ident {
-    // Return the next identifier after this one
-    fn succ(self) -> Self {
-        Ident(self.0 + 2)
-    }
-}
-
-impl Display for Ident {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(f, "{{{}}}", self.0)
-    }
-}
-
-/// A struct providing us with an easy source of new identifiers
-#[derive(Clone)]
-pub struct IdentSource {
-    next: Ident,
-}
-
-impl IdentSource {
-    /// Create a new source of identifiers
-    pub fn even() -> Self {
-        IdentSource { next: Ident(0) }
-    }
-
-    /// Get the next identifier from this source
-    pub fn next(&mut self) -> Ident {
-        let ret = self.next;
-        self.next = self.next.succ();
-        ret
-    }
-}
-
-/// A mapping allowing us to retrieve a name for each identifier
-///
-/// This is useful to be able to have nice error messages using variable
-/// names at later point, when working with the identifiers
-#[derive(Debug)]
-pub struct Dictionary {
-    // The mapping we have from each identifier to the string corresponding to it
-    map: HashMap<Ident, String>,
-}
-
-impl Dictionary {
-    fn new() -> Self {
-        Dictionary {
-            map: HashMap::new(),
-        }
-    }
-
-    fn insert(&mut self, ident: Ident, name: String) {
-        self.map.insert(ident, name);
-    }
-
-    /// Try and get the string corresponding to an identifier
-    pub fn get(&self, ident: Ident) -> Option<&str> {
-        // I wonder if we can avoid the map here
-        self.map.get(&ident).map(|t| t.as_ref())
-    }
-
-    /// Get the string corresponding to an identifier or display the identifier directly
-    pub fn get_or_str(&self, ident: Ident) -> String {
-        match self.get(ident) {
-            None => format!("{}", ident),
-            Some(x) => x.to_string(),
-        }
-    }
-}
-
-/// Represents a bidirectional mapping
-struct Interner {
-    dict: Dictionary,
-    lookup: HashMap<String, Ident>,
-    source: IdentSource,
-}
-
-impl Interner {
-    // Create a new interner, which will contain the built-in identifiers we
-    // know of as well
-    fn new() -> Self {
-        Interner {
-            dict: Dictionary::new(),
-            lookup: HashMap::new(),
-            source: IdentSource::even(),
-        }
-    }
-
-    // Insert a new string, giving it a new identifier, and incrementing the state
-    // of the identifier, and what not
-    fn insert(&mut self, v: String) -> Ident {
-        let key = self.source.next();
-        self.dict.insert(key, v.clone());
-        self.lookup.insert(v, key);
-        key
-    }
-
-    // Get the identifier that a string should have, either looking
-    // up what it is, or creating a new identifier for it if it doesn't have one
-    fn ident(&mut self, v: String) -> Ident {
-        match self.lookup.get(&v) {
-            Some(x) => *x,
-            None => self.insert(v),
-        }
-    }
-}
-
-/// This structure annotates some piece of an AST with a reference to a dictionary
-///
-/// This allows us to pretty print certain parts of an AST without having ugly
-/// identifiers in the pretty part.
-#[derive(Debug)]
-pub struct WithDict<'a, A> {
-    pub view: &'a A,
-    pub dict: &'a Dictionary,
-}
-
-impl<'a, A> WithDict<'a, A> {
-    pub fn new(view: &'a A, dict: &'a Dictionary) -> Self {
-        WithDict { view, dict }
-    }
-
-    pub fn with_view<B>(&self, view: &'a B) -> WithDict<'a, B> {
-        WithDict {
-            view,
-            dict: self.dict,
-        }
-    }
-}
 
 /// We simply reuse the binary operations provided by the parser
 pub type BinOp = parser::BinOp;
@@ -177,44 +39,49 @@ pub enum Expr {
     Apply(Box<Expr>, Box<Expr>),
 }
 
-impl<'a> fmt::Display for WithDict<'a, Expr> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.view {
-            Expr::Lambda(n, e) => write!(
-                f,
-                "(λ {} {})",
-                self.dict.get_or_str(*n),
-                self.with_view(e.as_ref())
-            ),
-            Expr::Name(n) => write!(f, "{}", self.dict.get(*n).unwrap()),
+impl DisplayWithDict for Expr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>, dict: &Dictionary) -> fmt::Result {
+        match self {
+            Expr::Lambda(n, e) => {
+                write!(f, "(λ {} ", dict.get_or_str(*n))?;
+                e.fmt(f, dict)?;
+                write!(f, ")")
+            }
+            Expr::Name(n) => write!(f, "{}", dict.get(*n).unwrap()),
             Expr::NumberLitt(i) => write!(f, "{}", i),
             Expr::StringLitt(s) => write!(f, "\"{}\"", s),
-            Expr::Binary(op, e1, e2) => write!(
-                f,
-                "({} {} {})",
-                op,
-                self.with_view(e1.as_ref()),
-                self.with_view(e2.as_ref())
-            ),
-            Expr::Negate(e) => write!(f, "(- {})", self.with_view(e.as_ref())),
-            Expr::Apply(e1, e2) => write!(
-                f,
-                "(apply {} {})",
-                self.with_view(e1.as_ref()),
-                self.with_view(e2.as_ref())
-            ),
+            Expr::Binary(op, e1, e2) => {
+                write!(f, "({} ", op)?;
+                e1.fmt(f, dict)?;
+                write!(f, " ")?;
+                e2.fmt(f, dict)?;
+                write!(f, ")")
+            }
+            Expr::Negate(e) => {
+                write!(f, "(- ")?;
+                e.fmt(f, dict)?;
+                write!(f, ")")
+            }
+            Expr::Apply(e1, e2) => {
+                write!(f, "(apply ")?;
+                e1.fmt(f, dict)?;
+                write!(f, " ")?;
+                e2.fmt(f, dict)?;
+                write!(f, ")")
+            }
             Expr::Let(defs, e) => {
                 write!(f, "(let (")?;
                 let mut i = 0;
                 for d in defs {
-                    if i == 0 {
-                        write!(f, "{}", self.with_view(d))?;
-                    } else {
-                        write!(f, " {}", self.with_view(d))?;
+                    if i > 0 {
+                        write!(f, " ")?;
                     }
+                    d.fmt(f, dict)?;
                     i += 1;
                 }
-                write!(f, ") {})", self.with_view(e.as_ref()))
+                write!(f, ") ")?;
+                e.fmt(f, dict)?;
+                write!(f, ")")
             }
         }
     }
@@ -236,16 +103,17 @@ pub enum Type {
     TypeVar(Ident),
 }
 
-impl<'a> fmt::Display for WithDict<'a, Type> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.view {
-            Type::Function(t1, t2) => write!(
-                f,
-                "(-> {} {})",
-                self.with_view(t1.as_ref()),
-                self.with_view(t2.as_ref())
-            ),
-            Type::TypeVar(n) => write!(f, "{}", self.dict.get_or_str(*n)),
+impl DisplayWithDict for Type {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>, dict: &Dictionary) -> fmt::Result {
+        match self {
+            Type::Function(t1, t2) => {
+                write!(f, "(-> ")?;
+                t1.fmt(f, dict)?;
+                write!(f, " ")?;
+                t2.fmt(f, dict)?;
+                write!(f, ")")
+            }
+            Type::TypeVar(n) => write!(f, "{}", dict.get_or_str(*n)),
             Type::I64 => write!(f, "I64"),
             Type::Strng => write!(f, "String"),
         }
@@ -265,33 +133,24 @@ pub struct Scheme {
     pub typ: Type,
 }
 
-impl Scheme {
-    /// Create a new scheme with no bound variables over a certain type
-    pub fn over(typ: Type) -> Self {
-        Scheme {
-            type_vars: HashSet::new(),
-            typ,
-        }
-    }
-}
-
-impl<'a> fmt::Display for WithDict<'a, Scheme> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let view = self.view;
-        if !view.type_vars.is_empty() {
+impl DisplayWithDict for Scheme {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>, dict: &Dictionary) -> fmt::Result {
+        if !self.type_vars.is_empty() {
             write!(f, "(=> (")?;
             let mut i = 0;
-            for v in &view.type_vars {
+            for v in &self.type_vars {
                 if i == 0 {
-                    write!(f, "{}", self.dict.get_or_str(*v))?;
+                    write!(f, "{}", dict.get_or_str(*v))?;
                 } else {
-                    write!(f, " {}", self.dict.get_or_str(*v))?;
+                    write!(f, " {}", dict.get_or_str(*v))?;
                 }
                 i += 1;
             }
-            write!(f, ") {})", self.with_view(&view.typ))
+            write!(f, ") ")?;
+            self.typ.fmt(f, dict)?;
+            write!(f, ")")
         } else {
-            write!(f, "{}", self.with_view(&view.typ))
+            self.typ.fmt(f, dict)
         }
     }
 }
@@ -306,18 +165,22 @@ pub enum Definition {
     Val(Ident, Option<Scheme>, Expr),
 }
 
-impl<'a> fmt::Display for WithDict<'a, Definition> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.view {
+impl DisplayWithDict for Definition {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>, dict: &Dictionary) -> fmt::Result {
+        match self {
             Definition::Val(n, t, e) => match t {
-                None => write!(f, "(= {} {})", self.dict.get_or_str(*n), self.with_view(e)),
-                Some(t) => write!(
-                    f,
-                    "(= (: {} {}) {})",
-                    self.dict.get_or_str(*n),
-                    self.with_view(t),
-                    self.with_view(e)
-                ),
+                None => {
+                    write!(f, "(= {} ", dict.get_or_str(*n))?;
+                    e.fmt(f, dict)?;
+                    write!(f, ")")
+                }
+                Some(t) => {
+                    write!(f, "(= (: {} ", dict.get_or_str(*n))?;
+                    t.fmt(f, dict)?;
+                    write!(f, ") ")?;
+                    e.fmt(f, dict)?;
+                    write!(f, ")")
+                }
             },
         }
     }
@@ -333,11 +196,13 @@ pub struct AST {
     pub definitions: Vec<Definition>,
 }
 
-impl<'a> fmt::Display for WithDict<'a, AST> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl DisplayWithDict for AST {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>, dict: &Dictionary) -> fmt::Result {
         writeln!(f, "(ast")?;
-        for def in &self.view.definitions {
-            writeln!(f, "  {}", self.with_view(def))?;
+        for def in &self.definitions {
+            write!(f, "  ")?;
+            def.fmt(f, dict)?;
+            write!(f, "\n")?;
         }
         writeln!(f, ")")
     }
@@ -440,5 +305,5 @@ impl Simplifier {
 pub fn simplify(parsed: parser::AST) -> (AST, Dictionary) {
     let mut simplifier = Simplifier::new();
     let ast = simplifier.ast(parsed);
-    (ast, simplifier.interner.dict)
+    (ast, simplifier.interner.dictionary())
 }
