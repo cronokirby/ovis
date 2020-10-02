@@ -19,12 +19,12 @@ impl fmt::Display for Unknown {
 
 /// Represents a single expression in our language
 #[derive(Debug, PartialEq)]
-pub enum Expr {
+pub enum Expr<T = Unknown> {
     /// A lambda abstraction / function litteral
-    Lambda(Ident, Box<Expr>),
+    Lambda(Ident, T, Box<Expr<T>>),
     /// A let expression, where we have a sequence of definitions bound before
     /// an expression.
-    Let(Vec<Definition>, Box<Expr>),
+    Let(Vec<Definition<T>>, Box<Expr<T>>),
     /// A reference to a variable name or definition
     Name(Ident),
     /// A reference to a positive number
@@ -32,18 +32,20 @@ pub enum Expr {
     /// A reference to a string litteral
     StringLitt(String),
     /// A binary operation between expressions
-    Binary(BinOp, Box<Expr>, Box<Expr>),
+    Binary(BinOp, Box<Expr<T>>, Box<Expr<T>>),
     /// Unary negation of an expression
-    Negate(Box<Expr>),
+    Negate(Box<Expr<T>>),
     /// Represents the application of one function to an argument
-    Apply(Box<Expr>, Box<Expr>),
+    Apply(Box<Expr<T>>, Box<Expr<T>>),
 }
 
-impl DisplayWithDict for Expr {
+impl<T: DisplayWithDict> DisplayWithDict for Expr<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>, dict: &Dictionary) -> fmt::Result {
         match self {
-            Expr::Lambda(n, e) => {
+            Expr::Lambda(n, t, e) => {
                 write!(f, "(λ {} ", dict.get_or_str(*n))?;
+                t.fmt(f, dict)?;
+                write!(f, " ")?;
                 e.fmt(f, dict)?;
                 write!(f, ")")
             }
@@ -160,29 +162,28 @@ impl DisplayWithDict for Scheme {
 /// A definition assigns a name to an expression, and a type annotation assigns
 /// an explicit type to a name. Type annotations are optional in our language.
 #[derive(Debug, PartialEq)]
-pub enum Definition {
+pub enum Definition<T = Unknown> {
     /// Represents the definition of name, with its corresponding expression
-    Val(Ident, Option<Scheme>, Expr),
+    Val(Ident, T, Option<Scheme>, Expr<T>),
 }
 
-impl DisplayWithDict for Definition {
+impl<T: DisplayWithDict> DisplayWithDict for Definition<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>, dict: &Dictionary) -> fmt::Result {
-        match self {
-            Definition::Val(n, t, e) => match t {
-                None => {
-                    write!(f, "(= {} ", dict.get_or_str(*n))?;
-                    e.fmt(f, dict)?;
-                    write!(f, ")")
-                }
-                Some(t) => {
-                    write!(f, "(= (: {} ", dict.get_or_str(*n))?;
-                    t.fmt(f, dict)?;
-                    write!(f, ") ")?;
-                    e.fmt(f, dict)?;
-                    write!(f, ")")
-                }
-            },
+        let Definition::Val(n, t, declared, e) = self;
+        match declared {
+            None => {
+                write!(f, "(= {} ", dict.get_or_str(*n))?;
+            }
+            Some(decl) => {
+                write!(f, "(= (: {} ", dict.get_or_str(*n))?;
+                decl.fmt(f, dict)?;
+                write!(f, ") ")?;
+            }
         }
+        t.fmt(f, dict)?;
+        write!(f, " ")?;
+        e.fmt(f, dict)?;
+        write!(f, ")")
     }
 }
 
@@ -192,8 +193,8 @@ impl DisplayWithDict for Definition {
 ///
 /// A program is just a sequence of value or type annotations
 #[derive(Debug, PartialEq)]
-pub struct AST {
-    pub definitions: Vec<Definition>,
+pub struct AST<T = Unknown> {
+    pub definitions: Vec<Definition<T>>,
 }
 
 impl DisplayWithDict for AST {
@@ -257,7 +258,7 @@ impl Simplifier {
             parser::Expr::Lambda(bindings, body) => {
                 let mut seed = self.expr(*body);
                 for name in bindings.into_iter().rev() {
-                    seed = Expr::Lambda(self.interner.ident(name), Box::new(seed))
+                    seed = Expr::Lambda(self.interner.ident(name), Unknown, Box::new(seed))
                 }
                 seed
             }
@@ -282,6 +283,7 @@ impl Simplifier {
                     let ident = self.interner.ident(name);
                     res.push(Definition::Val(
                         ident,
+                        Unknown,
                         map.get(&ident).cloned(),
                         self.expr(expr),
                     ))
