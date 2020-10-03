@@ -3,6 +3,7 @@ mod interner;
 mod lexer;
 mod parser;
 mod simplifier;
+mod typer;
 
 use interner::WithDict;
 use std::convert::TryFrom;
