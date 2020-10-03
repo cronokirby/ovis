@@ -22,14 +22,14 @@ enum Constraint {
 }
 
 /// Represents a substitution of type variables for concrete types
-struct Substititon {
+struct Substitution {
     map: HashMap<TypeVar, Type>,
 }
 
-impl Substititon {
+impl Substitution {
     /// The substitution where nothing happens
     fn empty() -> Self {
-        Substititon {
+        Substitution {
             map: HashMap::new(),
         }
     }
@@ -37,6 +37,71 @@ impl Substititon {
     /// Add a new mapping to this substitution
     fn add(&mut self, var: TypeVar, typ: Type) {
         self.map.insert(var, typ);
+    }
+
+    fn get(&self, var: TypeVar) -> Option<&Type> {
+        self.map.get(&var)
+    }
+}
+
+fn hidden_lookup_or(
+    subst: &Substitution,
+    hiding: Option<&HashSet<TypeVar>>,
+    var: TypeVar,
+    default: Type,
+) -> Type {
+    hiding
+        .and_then(|hidden| {
+            if hidden.contains(&var) {
+                Some(default.clone())
+            } else {
+                None
+            }
+        })
+        .or_else(|| subst.get(var).cloned())
+        .unwrap_or(default)
+}
+
+trait Substitutable {
+    fn substitute(&mut self, subst: &Substitution, hiding: Option<&HashSet<TypeVar>>);
+}
+
+impl Substitutable for Ident {
+    fn substitute(&mut self, subst: &Substitution, hiding: Option<&HashSet<TypeVar>>) {
+        match hidden_lookup_or(subst, hiding, *self, Type::TypeVar(*self)) {
+            Type::TypeVar(tv) => *self = tv,
+            _ => {}
+        }
+    }
+}
+
+impl Substitutable for Type {
+    fn substitute(&mut self, subst: &Substitution, hiding: Option<&HashSet<Var>>) {
+        match self {
+            Type::TypeVar(a) => *self = hidden_lookup_or(subst, hiding, *a, Type::TypeVar(*a)),
+            Type::Function(t1, t2) => {
+                t1.substitute(subst, hiding);
+                t2.substitute(subst, hiding);
+            }
+            _ => {}
+        }
+    }
+}
+
+impl Substitutable for Scheme {
+    fn substitute(&mut self, subst: &Substitution, hiding: Option<&HashSet<TypeVar>>) {
+        let mut temp = HashSet::new();
+        let new_hiding = match hiding {
+            Some(h) => {
+                for x in self.type_vars.intersection(h) {
+                    temp.insert(*x);
+                }
+                &temp
+            }
+            None => &self.type_vars,
+        };
+
+        self.typ.substitute(subst, Some(new_hiding))
     }
 }
 
