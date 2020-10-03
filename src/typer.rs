@@ -105,6 +105,32 @@ impl Substitutable for Scheme {
     }
 }
 
+impl Substitutable for Constraint {
+    fn substitute(&mut self, subst: &Substitution, hiding: Option<&HashSet<TypeVar>>) {
+        match self {
+            Constraint::SameType(t1, t2) => {
+                t1.substitute(subst, hiding);
+                t2.substitute(subst, hiding);
+            }
+            Constraint::ExplicitInst(typ, scheme) => {
+                typ.substitute(subst, hiding);
+                scheme.substitute(subst, hiding);
+            }
+            Constraint::ImplicitInst(t1, vars, t2) => {
+                t1.substitute(subst, hiding);
+                t2.substitute(subst, hiding);
+                let mut new_vars = HashSet::new();
+                for v in vars.iter() {
+                    let mut mv = *v;
+                    mv.substitute(subst, hiding);
+                    new_vars.insert(mv);
+                }
+                *vars = new_vars;
+            }
+        }
+    }
+}
+
 /// A set of assumptions we have gathered so far about variables and their types
 struct Assumptions(Vec<(Var, Type)>);
 
