@@ -1,4 +1,5 @@
-use crate::interner::{Dictionary, DisplayWithDict, Ident, Interner};
+use crate::identifiers::{Ident, IdentSource};
+use crate::interner::{Dictionary, DisplayWithDict, Interner};
 use crate::parser;
 
 use std::collections::{HashMap, HashSet};
@@ -209,14 +210,14 @@ impl DisplayWithDict for AST {
     }
 }
 
-struct Simplifier {
-    interner: Interner,
+struct Simplifier<'a> {
+    interner: Interner<'a>,
 }
 
-impl Simplifier {
-    fn new() -> Self {
+impl<'a> Simplifier<'a> {
+    fn new(source: &'a mut IdentSource) -> Self {
         Simplifier {
-            interner: Interner::new(),
+            interner: Interner::new(source),
         }
     }
 
@@ -304,8 +305,8 @@ impl Simplifier {
 ///
 /// We want to simplify to remove so-called "Syntax Sugar", allowing us to
 /// work more directly with certain constructs
-pub fn simplify(parsed: parser::AST) -> (AST, Dictionary) {
-    let mut simplifier = Simplifier::new();
+pub fn simplify(parsed: parser::AST, source: &mut IdentSource) -> (AST, Dictionary) {
+    let mut simplifier = Simplifier::new(source);
     let ast = simplifier.ast(parsed);
     (ast, simplifier.interner.dictionary())
 }

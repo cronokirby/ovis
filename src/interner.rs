@@ -1,47 +1,8 @@
+use crate::identifiers::{Ident, IdentSource};
+
 use std::collections::HashMap;
-use std::hash::Hash;
 
 use std::fmt::{Display, Formatter, Result as FmtResult};
-
-/// A name we can use for an identifier.
-///
-/// This idea is that anywhere we could have used a string based identifier,
-/// we can replace that exact identifier with this instead, saving on space.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub struct Ident(u64);
-
-impl Ident {
-    // Return the next identifier after this one
-    fn succ(self) -> Self {
-        Ident(self.0 + 2)
-    }
-}
-
-impl Display for Ident {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(f, "{{{}}}", self.0)
-    }
-}
-
-/// A struct providing us with an easy source of new identifiers
-#[derive(Clone)]
-pub struct IdentSource {
-    next: Ident,
-}
-
-impl IdentSource {
-    /// Create a new source of identifiers
-    pub fn even() -> Self {
-        IdentSource { next: Ident(0) }
-    }
-
-    /// Get the next identifier from this source
-    pub fn next(&mut self) -> Ident {
-        let ret = self.next;
-        self.next = self.next.succ();
-        ret
-    }
-}
 
 /// A mapping allowing us to retrieve a name for each identifier
 ///
@@ -83,20 +44,20 @@ impl Dictionary {
 ///
 /// The main utility of this class is in being able to traverse an AST and construct
 /// a mapping between the strings present in the AST and unique identifiers.
-pub struct Interner {
+pub struct Interner<'a> {
     dict: Dictionary,
     lookup: HashMap<String, Ident>,
-    source: IdentSource,
+    source: &'a mut IdentSource,
 }
 
-impl Interner {
+impl<'a> Interner<'a> {
     // Create a new interner, which will contain the built-in identifiers we
     // know of as well
-    pub fn new() -> Self {
+    pub fn new(source: &'a mut IdentSource) -> Self {
         Interner {
             dict: Dictionary::new(),
             lookup: HashMap::new(),
-            source: IdentSource::even(),
+            source,
         }
     }
 

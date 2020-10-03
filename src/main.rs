@@ -1,3 +1,4 @@
+mod identifiers;
 mod interner;
 mod lexer;
 mod parser;
@@ -104,6 +105,8 @@ impl TryFrom<&[String]> for Args {
 }
 
 fn real_main(args: Args) -> Result<(), CompileError> {
+    let mut source = identifiers::IdentSource::new();
+
     let contents =
         fs::read_to_string(&args.path).map_err(|_| CompileError::CouldntRead(args.path.clone()))?;
     let tokens = lexer::lex(&contents)?;
@@ -120,7 +123,7 @@ fn real_main(args: Args) -> Result<(), CompileError> {
         println!("Parsed:\n\n{}", ast);
         return Ok(());
     }
-    let (simplified, dict) = simplifier::simplify(ast);
+    let (simplified, dict) = simplifier::simplify(ast, &mut source);
     if args.stage <= Stage::Simplify {
         println!("Simplified:\n\n{}", WithDict::new(&simplified, &dict));
         return Ok(());
