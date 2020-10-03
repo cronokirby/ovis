@@ -79,7 +79,10 @@ impl Dictionary {
     }
 }
 
-/// Represents a bidirectional mapping
+/// A struct allowing us to build up a bidirectional mapping between strings and identifiers.
+///
+/// The main utility of this class is in being able to traverse an AST and construct
+/// a mapping between the strings present in the AST and unique identifiers.
 pub struct Interner {
     dict: Dictionary,
     lookup: HashMap<String, Ident>,
@@ -115,11 +118,16 @@ impl Interner {
         }
     }
 
+    /// Access the dictionary created in this interner
     pub fn dictionary(self) -> Dictionary {
         self.dict
     }
 }
 
+/// A trait for things that can be displayed nicely in presence of a dictionary
+///
+/// This is useful for interned syntax trees, allowing us to pretty print them
+/// using a reference to a dictionary.
 pub trait DisplayWithDict {
     fn fmt(&self, f: &mut Formatter<'_>, dict: &Dictionary) -> FmtResult;
 }
@@ -130,12 +138,21 @@ impl<T: Display> DisplayWithDict for T {
     }
 }
 
+/// A struct bundling some type together with a dictionary.
+///
+/// The main utility in this struct is that it implements `Display` whenever
+/// the type it wraps implements `DisplayWithDict`. Because of this, it makes
+/// it easy to use those types in situations where we expect to be able to
+/// use Display.
+///
+/// For example, `println!("{}", WithDict::new(ast, dict))` becomes possible.
 pub struct WithDict<'a, T> {
     dict: &'a Dictionary,
     t: &'a T,
 }
 
 impl<'a, T> WithDict<'a, T> {
+    /// Create a new wrapper from a reference to a type and dictionary.
     pub fn new(t: &'a T, dict: &'a Dictionary) -> Self {
         WithDict { t, dict }
     }
