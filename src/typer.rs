@@ -152,3 +152,37 @@ impl Assumptions {
         }
     }
 }
+
+trait FreeTypeVars {
+    fn free_type_vars(&self, buf: &mut HashSet<TypeVar>);
+}
+
+impl FreeTypeVars for Ident {
+    fn free_type_vars(&self, buf: &mut HashSet<TypeVar>) {
+        buf.insert(*self);
+    }
+}
+
+impl FreeTypeVars for Type {
+    fn free_type_vars(&self, buf: &mut HashSet<TypeVar>) {
+        match self {
+            Type::TypeVar(a) => {
+                buf.insert(*a);
+            }
+            Type::Function(t1, t2) => {
+                t1.free_type_vars(buf);
+                t2.free_type_vars(buf);
+            }
+            _ => {}
+        }
+    }
+}
+
+impl FreeTypeVars for Scheme {
+    fn free_type_vars(&self, buf: &mut HashSet<TypeVar>) {
+        self.typ.free_type_vars(buf);
+        for v in &self.type_vars {
+            buf.remove(v);
+        }
+    }
+}
