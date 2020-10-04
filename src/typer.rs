@@ -12,6 +12,7 @@ type Var = Ident;
 ///
 /// The idea is to have a constraint generation phase, and then
 /// a final constraint gathering phase later.
+#[derive(Clone)]
 enum Constraint {
     /// An assertion that two types must be equal
     SameType(Type, Type),
@@ -64,6 +65,33 @@ impl Substitution {
 
     fn get(&self, var: TypeVar) -> Option<&Type> {
         self.map.get(&var)
+    }
+
+    fn unify(&mut self, t1: Type, t2: Type) -> TypeResult<()> {
+        match (t1, t2) {
+            (t1, t2) if t1 == t2 => Ok(()),
+            (Type::TypeVar(a), t) | (t, Type::TypeVar(a)) => {
+                if t == Type::TypeVar(a) {
+                    Ok(())
+                } else {
+                    let mut free = HashSet::new();
+                    t.free_type_vars(&mut free);
+                    if free.contains(&a) {
+                        Err(TypeError::InfiniteType(a, t))
+                    } else {
+                        Ok(())
+                    }
+                }
+            }
+            (Type::Function(t1, mut t2), Type::Function(t3, mut t4)) => {
+                self.unify(*t1, *t3);
+                t2.substitute(self, None);
+                t4.substitute(self, None);
+                self.unify(*t2, *t4);
+                Ok(())
+            }
+            (t1, t2) => Err(TypeError::Mismatch(t1, t2)),
+        }
     }
 }
 
@@ -152,6 +180,26 @@ impl Substitutable for Constraint {
             }
         }
     }
+}
+
+fn instantiate(source: &mut IdentSource, mut scheme: Scheme) -> Type {
+    let mut subst = Substitution::empty();
+    let mut free = HashSet::new();
+    scheme.free_type_vars(&mut free);
+    for v in free {
+        subst.add(v, Type::TypeVar(source.next()));
+    }
+    scheme.typ.substitute(&subst, None);
+    scheme.typ
+}
+
+fn generalize(free: &HashSet<TypeVar>, typ: Type) -> Scheme {
+    let mut type_vars = HashSet::new();
+    typ.free_type_vars(&mut type_vars);
+    for v in free {
+        type_vars.remove(&v);
+    }
+    Scheme { type_vars, typ }
 }
 
 /// A set of assumptions we have gathered so far about variables and their types
@@ -365,5 +413,86 @@ impl<'a> Inferencer<'a> {
                 (tv, Expr::Apply(Box::new(re1), Box::new(re2)))
             }
         }
+    }
+}
+
+struct Solver<'a> {
+    constraints: Vec<Constraint>,
+    solved: HashSet<usize>,
+    source: &'a mut IdentSource,
+    substitution: Substitution,
+}
+
+impl<'a> Solver<'a> {
+    fn new(constraints: Vec<Constraint>, source: &'a mut IdentSource) -> Self {
+        Solver {
+            constraints,
+            solved: HashSet::new(),
+            source,
+            substitution: Substitution::empty(),
+        }
+    }
+
+    fn solvable(&self, constraint: &Constraint, at: usize) -> bool {
+        match constraint {
+            Constraint::SameType(_, _) => true,
+            Constraint::ExplicitInst(_, _) => true,
+            // An implicit instantation is solvable only if there is no overlap
+            // between the active type variables in the constraints, and the
+            // free type variables in the instantiating type
+            Constraint::ImplicitInst(_, bound, t2) => {
+                let mut active = HashSet::new();
+                for i in 0..self.constraints.len() {
+                    if i == at || self.solved.contains(&i) {
+                        continue;
+                    }
+                    self.constraints[i].active_type_vars(&mut active);
+                }
+                let mut free = HashSet::new();
+                t2.free_type_vars(&mut free);
+                for v in free.difference(bound) {
+                    if active.contains(v) {
+                        return false;
+                    }
+                }
+                true
+            }
+        }
+    }
+
+    fn next_constraint(&mut self) -> Constraint {
+        for i in 0..self.constraints.len() {
+            if self.solved.contains(&i) {
+                continue;
+            }
+            if self.solvable(&self.constraints[i], i) {
+                self.solved.insert(i);
+                return self.constraints[i].clone();
+            }
+        }
+        panic!("IMPOSSIBLE: No constraints are solvable in type checker")
+    }
+
+    fn solve(&mut self) -> TypeResult<()> {
+        while !self.constraints.is_empty() {
+            match self.next_constraint() {
+                Constraint::SameType(t1, t2) => {
+                    self.substitution.unify(t1, t2)?;
+                    for c in &mut self.constraints {
+                        c.substitute(&self.substitution, None);
+                    }
+                }
+                Constraint::ExplicitInst(t, scheme) => {
+                    let inst = instantiate(self.source, scheme);
+                    self.constraints.push(Constraint::SameType(inst, t));
+                }
+                Constraint::ImplicitInst(t1, bound, t2) => {
+                    let generalized = generalize(&bound, t2);
+                    self.constraints
+                        .push(Constraint::ExplicitInst(t1, generalized));
+                }
+            }
+        }
+        Ok(())
     }
 }
