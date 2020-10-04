@@ -473,8 +473,12 @@ impl<'a> Solver<'a> {
         panic!("IMPOSSIBLE: No constraints are solvable in type checker")
     }
 
+    fn has_constraints(&self) -> bool {
+        self.constraints.len() > self.solved.len()
+    }
+
     fn solve(&mut self) -> TypeResult<()> {
-        while !self.constraints.is_empty() {
+        while self.has_constraints() {
             match self.next_constraint() {
                 Constraint::SameType(t1, t2) => {
                     self.substitution.unify(t1, t2)?;
