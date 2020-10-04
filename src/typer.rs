@@ -14,7 +14,7 @@ type Var = Ident;
 ///
 /// The idea is to have a constraint generation phase, and then
 /// a final constraint gathering phase later.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum Constraint {
     /// An assertion that two types must be equal
     SameType(Type, Type),
@@ -48,6 +48,7 @@ impl Constraint {
 }
 
 /// Represents a substitution of type variables for concrete types
+#[derive(Debug)]
 struct Substitution {
     map: HashMap<TypeVar, Type>,
 }
@@ -81,6 +82,7 @@ impl Substitution {
                     if free.contains(&a) {
                         Err(TypeError::InfiniteType(a, t))
                     } else {
+                        self.add(a, t);
                         Ok(())
                     }
                 }
@@ -607,9 +609,11 @@ pub fn type_tree(ast: AST, source: &mut IdentSource) -> TypeResult<AST<Scheme>> 
     for v in assumed_vars {
         return Err(TypeError::UnboundVar(v));
     }
+    dbg!(&inferencer.constraints);
     let mut solver = Solver::new(inferencer.constraints, source);
     solver.solve()?;
 
+    dbg!(&solver.substitution);
     let mut typer = Typer::new(solver.substitution);
     Ok(typer.apply(tree))
 }
