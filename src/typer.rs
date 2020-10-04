@@ -280,21 +280,21 @@ impl<'a> Inferencer<'a> {
         }
     }
 
-    fn infer(&mut self, expr: Expr) -> TypeResult<(Type, Expr<Type>)> {
+    fn infer(&mut self, expr: Expr) -> (Type, Expr<Type>) {
         match expr {
-            Expr::NumberLitt(n) => Ok((Type::I64, Expr::NumberLitt(n))),
-            Expr::StringLitt(s) => Ok((Type::Strng, Expr::StringLitt(s))),
+            Expr::NumberLitt(n) => (Type::I64, Expr::NumberLitt(n)),
+            Expr::StringLitt(s) => (Type::Strng, Expr::StringLitt(s)),
             Expr::Name(v) => {
                 let tv = Type::TypeVar(self.source.next());
                 self.assumptions.extend(v, tv.clone());
-                Ok((tv, Expr::Name(v)))
+                (tv, Expr::Name(v))
             }
             Expr::Lambda(v, _, e) => {
                 let tv = Type::TypeVar(self.source.next());
 
                 self.ctx.enter();
                 self.ctx.add(v);
-                let (rt, re) = self.infer(*e)?;
+                let (rt, re) = self.infer(*e);
                 self.ctx.exit();
 
                 for (_, t) in self.assumptions.lookup(v) {
@@ -302,15 +302,15 @@ impl<'a> Inferencer<'a> {
                         .push(Constraint::SameType(t.clone(), tv.clone()));
                 }
                 self.assumptions.remove(v);
-                Ok((
+                (
                     Type::Function(Box::new(tv.clone()), Box::new(rt)),
                     Expr::Lambda(v, tv, Box::new(re)),
-                ))
+                )
             }
             Expr::Let(def, e2) => {
                 let Definition::Val(v, _, declared, e1) = *def;
-                let (rt1, re1) = self.infer(e1)?;
-                let (rt2, re2) = self.infer(*e2)?;
+                let (rt1, re1) = self.infer(e1);
+                let (rt2, re2) = self.infer(*e2);
                 let mut bound = HashSet::new();
                 self.ctx.bound(&mut bound);
 
@@ -329,11 +329,11 @@ impl<'a> Inferencer<'a> {
                 self.assumptions.remove(v);
 
                 let new_def = Definition::Val(v, rt1, None, re1);
-                Ok((rt2, Expr::Let(Box::new(new_def), Box::new(re2))))
+                (rt2, Expr::Let(Box::new(new_def), Box::new(re2)))
             }
             Expr::Binary(op, e1, e2) => {
-                let (rt1, re1) = self.infer(*e1)?;
-                let (rt2, re2) = self.infer(*e2)?;
+                let (rt1, re1) = self.infer(*e1);
+                let (rt2, re2) = self.infer(*e2);
                 let tv = Type::TypeVar(self.source.next());
                 let actual = Type::Function(
                     Box::new(rt1),
@@ -345,24 +345,24 @@ impl<'a> Inferencer<'a> {
                 );
                 self.constraints
                     .push(Constraint::SameType(actual, expected));
-                Ok((tv, Expr::Binary(op, Box::new(re1), Box::new(re2))))
+                (tv, Expr::Binary(op, Box::new(re1), Box::new(re2)))
             }
             Expr::Negate(e) => {
-                let (rt, re) = self.infer(*e)?;
+                let (rt, re) = self.infer(*e);
                 let tv = Type::TypeVar(self.source.next());
                 let actual = Type::Function(Box::new(rt), Box::new(tv.clone()));
                 let expected = Type::Function(Box::new(Type::I64), Box::new(Type::I64));
                 self.constraints
                     .push(Constraint::SameType(actual, expected));
-                Ok((tv, Expr::Negate(Box::new(re))))
+                (tv, Expr::Negate(Box::new(re)))
             }
             Expr::Apply(e1, e2) => {
-                let (rt1, re1) = self.infer(*e1)?;
-                let (rt2, re2) = self.infer(*e2)?;
+                let (rt1, re1) = self.infer(*e1);
+                let (rt2, re2) = self.infer(*e2);
                 let tv = Type::TypeVar(self.source.next());
                 let expected = Type::Function(Box::new(rt2), Box::new(tv.clone()));
                 self.constraints.push(Constraint::SameType(rt1, expected));
-                Ok((tv, Expr::Apply(Box::new(re1), Box::new(re2))))
+                (tv, Expr::Apply(Box::new(re1), Box::new(re2)))
             }
         }
     }
