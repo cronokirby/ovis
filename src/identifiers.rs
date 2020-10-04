@@ -16,7 +16,7 @@ impl Ident {
 
 impl Display for Ident {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(f, "{{{}}}", self.0)
+        write!(f, "${}", self.0)
     }
 }
 
