@@ -21,6 +21,29 @@ enum Constraint {
     ImplicitInst(Type, HashSet<TypeVar>, Type),
 }
 
+impl Constraint {
+    fn active_type_vars(&self, buf: &mut HashSet<TypeVar>) {
+        match self {
+            Constraint::SameType(t1, t2) => {
+                t1.free_type_vars(buf);
+                t2.free_type_vars(buf);
+            }
+            Constraint::ExplicitInst(typ, scheme) => {
+                typ.free_type_vars(buf);
+                scheme.free_type_vars(buf);
+            }
+            Constraint::ImplicitInst(t1, vars, t2) => {
+                let mut tmp = HashSet::new();
+                t2.free_type_vars(&mut tmp);
+                for v in tmp.intersection(vars) {
+                    buf.insert(*v);
+                }
+                t1.free_type_vars(buf);
+            }
+        }
+    }
+}
+
 /// Represents a substitution of type variables for concrete types
 struct Substitution {
     map: HashMap<TypeVar, Type>,
