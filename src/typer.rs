@@ -1,6 +1,8 @@
 use crate::identifiers::{Ident, IdentSource};
-use crate::simplifier::{Definition, Expr, Scheme, Type};
+use crate::interner::{Dictionary, DisplayWithDict};
+use crate::simplifier::{Definition, Expr, Scheme, Type, AST};
 use std::collections::{HashMap, HashSet};
+use std::fmt::{Formatter, Result as FmtResult};
 
 /// The type we use to represent type-level variables.
 type TypeVar = Ident;
@@ -84,10 +86,10 @@ impl Substitution {
                 }
             }
             (Type::Function(t1, mut t2), Type::Function(t3, mut t4)) => {
-                self.unify(*t1, *t3);
+                self.unify(*t1, *t3)?;
                 t2.substitute(self, None);
                 t4.substitute(self, None);
-                self.unify(*t2, *t4);
+                self.unify(*t2, *t4)?;
                 Ok(())
             }
             (t1, t2) => Err(TypeError::Mismatch(t1, t2)),
@@ -303,13 +305,32 @@ impl Context {
     }
 }
 
-enum TypeError {
+#[derive(Debug)]
+pub enum TypeError {
     Mismatch(Type, Type),
     InfiniteType(TypeVar, Type),
     UnboundVar(Var),
 }
 
-type TypeResult<T> = Result<T, TypeError>;
+impl DisplayWithDict for TypeError {
+    fn fmt(&self, f: &mut Formatter<'_>, dict: &Dictionary) -> FmtResult {
+        match self {
+            TypeError::Mismatch(t1, t2) => {
+                write!(f, "Mismatched types: ")?;
+                t1.fmt(f, dict)?;
+                write!(f, " != ")?;
+                t2.fmt(f, dict)
+            }
+            TypeError::InfiniteType(v, t) => {
+                write!(f, "Cannot unify infinite type: {} ~ ", dict.get_or_str(*v))?;
+                t.fmt(f, dict)
+            }
+            TypeError::UnboundVar(v) => write!(f, "Unbound variable: {}", dict.get_or_str(*v)),
+        }
+    }
+}
+
+pub type TypeResult<T> = Result<T, TypeError>;
 
 struct Inferencer<'a> {
     ctx: Context,
@@ -328,7 +349,7 @@ impl<'a> Inferencer<'a> {
         }
     }
 
-    fn infer(&mut self, expr: Expr) -> (Type, Expr<Type>) {
+    fn infer_expr(&mut self, expr: Expr) -> (Type, Expr<Type>) {
         match expr {
             Expr::NumberLitt(n) => (Type::I64, Expr::NumberLitt(n)),
             Expr::StringLitt(s) => (Type::Strng, Expr::StringLitt(s)),
@@ -342,7 +363,7 @@ impl<'a> Inferencer<'a> {
 
                 self.ctx.enter();
                 self.ctx.add(v);
-                let (rt, re) = self.infer(*e);
+                let (rt, re) = self.infer_expr(*e);
                 self.ctx.exit();
 
                 for (_, t) in self.assumptions.lookup(v) {
@@ -357,8 +378,8 @@ impl<'a> Inferencer<'a> {
             }
             Expr::Let(def, e2) => {
                 let Definition::Val(v, _, declared, e1) = *def;
-                let (rt1, re1) = self.infer(e1);
-                let (rt2, re2) = self.infer(*e2);
+                let (rt1, re1) = self.infer_expr(e1);
+                let (rt2, re2) = self.infer_expr(*e2);
                 let mut bound = HashSet::new();
                 self.ctx.bound(&mut bound);
 
@@ -380,8 +401,8 @@ impl<'a> Inferencer<'a> {
                 (rt2, Expr::Let(Box::new(new_def), Box::new(re2)))
             }
             Expr::Binary(op, e1, e2) => {
-                let (rt1, re1) = self.infer(*e1);
-                let (rt2, re2) = self.infer(*e2);
+                let (rt1, re1) = self.infer_expr(*e1);
+                let (rt2, re2) = self.infer_expr(*e2);
                 let tv = Type::TypeVar(self.source.next());
                 let actual = Type::Function(
                     Box::new(rt1),
@@ -396,7 +417,7 @@ impl<'a> Inferencer<'a> {
                 (tv, Expr::Binary(op, Box::new(re1), Box::new(re2)))
             }
             Expr::Negate(e) => {
-                let (rt, re) = self.infer(*e);
+                let (rt, re) = self.infer_expr(*e);
                 let tv = Type::TypeVar(self.source.next());
                 let actual = Type::Function(Box::new(rt), Box::new(tv.clone()));
                 let expected = Type::Function(Box::new(Type::I64), Box::new(Type::I64));
@@ -405,14 +426,27 @@ impl<'a> Inferencer<'a> {
                 (tv, Expr::Negate(Box::new(re)))
             }
             Expr::Apply(e1, e2) => {
-                let (rt1, re1) = self.infer(*e1);
-                let (rt2, re2) = self.infer(*e2);
+                let (rt1, re1) = self.infer_expr(*e1);
+                let (rt2, re2) = self.infer_expr(*e2);
                 let tv = Type::TypeVar(self.source.next());
                 let expected = Type::Function(Box::new(rt2), Box::new(tv.clone()));
                 self.constraints.push(Constraint::SameType(rt1, expected));
                 (tv, Expr::Apply(Box::new(re1), Box::new(re2)))
             }
         }
+    }
+
+    fn infer(&mut self, ast: AST) -> AST<Type> {
+        let mut definitions = Vec::new();
+        for Definition::Val(v, _, declared, e) in ast.definitions {
+            let (rt, re) = self.infer_expr(e);
+            if let Some(d) = declared {
+                self.constraints
+                    .push(Constraint::ExplicitInst(rt.clone(), d))
+            }
+            definitions.push(Definition::Val(v, rt, None, re))
+        }
+        AST { definitions }
     }
 }
 
@@ -499,4 +533,83 @@ impl<'a> Solver<'a> {
         }
         Ok(())
     }
+}
+
+struct Typer {
+    subst: Substitution,
+    bound: HashSet<TypeVar>,
+}
+
+impl Typer {
+    fn new(subst: Substitution) -> Self {
+        Typer {
+            subst,
+            bound: HashSet::new(),
+        }
+    }
+
+    fn scheme_for(&self, mut typ: Type) -> Scheme {
+        typ.substitute(&self.subst, None);
+        generalize(&self.bound, typ)
+    }
+
+    fn apply_expr(&mut self, expr: Expr<Type>) -> Expr<Scheme> {
+        match expr {
+            Expr::NumberLitt(n) => Expr::NumberLitt(n),
+            Expr::StringLitt(s) => Expr::StringLitt(s),
+            Expr::Negate(e1) => Expr::Negate(Box::new(self.apply_expr(*e1))),
+            Expr::Name(v) => Expr::Name(v),
+            Expr::Binary(op, e1, e2) => Expr::Binary(
+                op,
+                Box::new(self.apply_expr(*e1)),
+                Box::new(self.apply_expr(*e2)),
+            ),
+            Expr::Apply(e1, e2) => Expr::Apply(
+                Box::new(self.apply_expr(*e1)),
+                Box::new(self.apply_expr(*e2)),
+            ),
+            Expr::Lambda(v, t, e) => {
+                let scheme: Scheme = self.scheme_for(t);
+                for b in &scheme.type_vars {
+                    self.bound.insert(*b);
+                }
+                Expr::Lambda(v, scheme, Box::new(self.apply_expr(*e)))
+            }
+            Expr::Let(def, e2) => {
+                let Definition::Val(v, t, _, e1) = *def;
+                let s1 = self.scheme_for(t);
+                for b in &s1.type_vars {
+                    self.bound.insert(*b);
+                }
+                let r1 = self.apply_expr(e1);
+                let r2 = self.apply_expr(*e2);
+                Expr::Let(Box::new(Definition::Val(v, s1, None, r1)), Box::new(r2))
+            }
+        }
+    }
+
+    fn apply(&mut self, ast: AST<Type>) -> AST<Scheme> {
+        let mut definitions = Vec::new();
+        for Definition::Val(v, t, _, e) in ast.definitions {
+            let s = self.scheme_for(t);
+            let r = self.apply_expr(e);
+            definitions.push(Definition::Val(v, s, None, r))
+        }
+        AST { definitions }
+    }
+}
+
+pub fn type_tree(ast: AST, source: &mut IdentSource) -> TypeResult<AST<Scheme>> {
+    let mut inferencer = Inferencer::new(source);
+    let tree = inferencer.infer(ast);
+    let mut assumed_vars = HashSet::new();
+    inferencer.assumptions.vars(&mut assumed_vars);
+    for v in assumed_vars {
+        return Err(TypeError::UnboundVar(v));
+    }
+    let mut solver = Solver::new(inferencer.constraints, source);
+    solver.solve()?;
+
+    let mut typer = Typer::new(solver.substitution);
+    Ok(typer.apply(tree))
 }

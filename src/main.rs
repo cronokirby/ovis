@@ -7,7 +7,6 @@ mod typer;
 
 use interner::WithDict;
 use std::convert::TryFrom;
-use std::error::Error;
 use std::fmt;
 use std::fs;
 
@@ -19,6 +18,7 @@ enum CompileError {
     LexError(Vec<lexer::LexError>),
     /// An error occurring while parsing
     ParseError(parser::ParseError),
+    TypeError(interner::OwnDict<typer::TypeError>),
 }
 
 impl fmt::Display for CompileError {
@@ -33,16 +33,7 @@ impl fmt::Display for CompileError {
                 Ok(())
             }
             CompileError::ParseError(e) => writeln!(f, "Parse Error: {}", e),
-        }
-    }
-}
-
-impl<'a> Error for CompileError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            CompileError::CouldntRead(_) => None,
-            CompileError::LexError(_) => None,
-            CompileError::ParseError(e) => Some(e),
+            CompileError::TypeError(e) => writeln!(f, "Type Error: {}", e),
         }
     }
 }
@@ -59,6 +50,12 @@ impl From<parser::ParseError> for CompileError {
     }
 }
 
+impl From<interner::OwnDict<typer::TypeError>> for CompileError {
+    fn from(t: interner::OwnDict<typer::TypeError>) -> Self {
+        CompileError::TypeError(t)
+    }
+}
+
 #[derive(Debug, PartialEq, PartialOrd)]
 /// Represents the stage up to which the user would like us to go
 enum Stage {
@@ -68,6 +65,8 @@ enum Stage {
     Parse,
     /// The user wants us to stop after simplifying the parse tree (and thus parsing)
     Simplify,
+    /// The user wants us to stop after typing the simplified tree (and thus simplifying)
+    Type,
 }
 
 impl TryFrom<&str> for Stage {
@@ -78,6 +77,7 @@ impl TryFrom<&str> for Stage {
             "lex" => Ok(Stage::Lex),
             "parse" => Ok(Stage::Parse),
             "simplify" => Ok(Stage::Simplify),
+            "type" => Ok(Stage::Type),
             _ => Err(()),
         }
     }
@@ -129,6 +129,13 @@ fn real_main(args: Args) -> Result<(), CompileError> {
         println!("Simplified:\n\n{}", WithDict::new(&simplified, &dict));
         return Ok(());
     }
+    let typed = typer::type_tree(simplified, &mut source)
+        .map_err(|e| interner::OwnDict::new(e, dict.clone()))?;
+    if args.stage <= Stage::Type {
+        println!("Typed:\n\n{}", WithDict::new(&typed, &dict));
+        return Ok(());
+    }
+
     Ok(())
 }
 

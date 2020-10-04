@@ -8,7 +8,7 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 ///
 /// This is useful to be able to have nice error messages using variable
 /// names at later point, when working with the identifiers
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Dictionary {
     // The mapping we have from each identifier to the string corresponding to it
     map: HashMap<Ident, String>,
@@ -122,5 +122,23 @@ impl<'a, T> WithDict<'a, T> {
 impl<'a, T: DisplayWithDict> Display for WithDict<'a, T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         self.t.fmt(f, self.dict)
+    }
+}
+
+#[derive(Debug)]
+pub struct OwnDict<T> {
+    dict: Dictionary,
+    t: T,
+}
+
+impl<T> OwnDict<T> {
+    pub fn new(t: T, dict: Dictionary) -> Self {
+        OwnDict { dict, t }
+    }
+}
+
+impl<T: DisplayWithDict> Display for OwnDict<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        self.t.fmt(f, &self.dict)
     }
 }

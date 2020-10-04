@@ -190,7 +190,7 @@ pub struct AST<T = Unknown> {
     pub definitions: Vec<Definition<T>>,
 }
 
-impl DisplayWithDict for AST {
+impl<T: DisplayWithDict> DisplayWithDict for AST<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>, dict: &Dictionary) -> fmt::Result {
         writeln!(f, "(ast")?;
         for def in &self.definitions {
