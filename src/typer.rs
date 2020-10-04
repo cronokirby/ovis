@@ -1,5 +1,5 @@
-use crate::identifiers::Ident;
-use crate::simplifier::{Scheme, Type};
+use crate::identifiers::{Ident, IdentSource};
+use crate::simplifier::{Definition, Expr, Scheme, Type};
 use std::collections::{HashMap, HashSet};
 
 /// The type we use to represent type-level variables.
@@ -168,11 +168,24 @@ impl Assumptions {
         self.0.push((var, typ))
     }
 
+    fn remove(&mut self, var: Var) {
+        self.0 = self
+            .0
+            .iter()
+            .filter(|x| x.0 != var)
+            .map(|x| (x.0, x.1.clone()))
+            .collect();
+    }
+
     /// Collect the set of variables we have an assumption about
     fn vars(&self, buf: &mut HashSet<Var>) {
         for (v, _) in &self.0 {
             buf.insert(*v);
         }
+    }
+
+    fn lookup(&self, var: Var) -> impl Iterator<Item = &(Var, Type)> {
+        self.0.iter().filter(move |x| x.0 == var)
     }
 }
 
@@ -206,6 +219,151 @@ impl FreeTypeVars for Scheme {
         self.typ.free_type_vars(buf);
         for v in &self.type_vars {
             buf.remove(v);
+        }
+    }
+}
+
+struct Context {
+    scopes: Vec<HashSet<TypeVar>>,
+}
+
+impl Context {
+    fn empty() -> Self {
+        Context {
+            scopes: vec![HashSet::new()],
+        }
+    }
+
+    fn enter(&mut self) {
+        self.scopes.push(HashSet::new())
+    }
+
+    fn exit(&mut self) {
+        self.scopes.pop();
+    }
+
+    fn add(&mut self, tv: TypeVar) {
+        self.scopes.last_mut().unwrap().insert(tv);
+    }
+
+    fn bound(&self, buf: &mut HashSet<TypeVar>) {
+        for scope in &self.scopes {
+            for v in scope {
+                buf.insert(*v);
+            }
+        }
+    }
+}
+
+enum TypeError {
+    Mismatch(Type, Type),
+    InfiniteType(TypeVar, Type),
+    UnboundVar(Var),
+}
+
+type TypeResult<T> = Result<T, TypeError>;
+
+struct Inferencer<'a> {
+    ctx: Context,
+    source: &'a mut IdentSource,
+    constraints: Vec<Constraint>,
+    assumptions: Assumptions,
+}
+
+impl<'a> Inferencer<'a> {
+    fn new(source: &'a mut IdentSource) -> Self {
+        Inferencer {
+            ctx: Context::empty(),
+            source,
+            constraints: Vec::new(),
+            assumptions: Assumptions::empty(),
+        }
+    }
+
+    fn infer(&mut self, expr: Expr) -> TypeResult<(Type, Expr<Type>)> {
+        match expr {
+            Expr::NumberLitt(n) => Ok((Type::I64, Expr::NumberLitt(n))),
+            Expr::StringLitt(s) => Ok((Type::Strng, Expr::StringLitt(s))),
+            Expr::Name(v) => {
+                let tv = Type::TypeVar(self.source.next());
+                self.assumptions.extend(v, tv.clone());
+                Ok((tv, Expr::Name(v)))
+            }
+            Expr::Lambda(v, _, e) => {
+                let tv = Type::TypeVar(self.source.next());
+
+                self.ctx.enter();
+                self.ctx.add(v);
+                let (rt, re) = self.infer(*e)?;
+                self.ctx.exit();
+
+                for (_, t) in self.assumptions.lookup(v) {
+                    self.constraints
+                        .push(Constraint::SameType(t.clone(), tv.clone()));
+                }
+                self.assumptions.remove(v);
+                Ok((
+                    Type::Function(Box::new(tv.clone()), Box::new(rt)),
+                    Expr::Lambda(v, tv, Box::new(re)),
+                ))
+            }
+            Expr::Let(def, e2) => {
+                let Definition::Val(v, _, declared, e1) = *def;
+                let (rt1, re1) = self.infer(e1)?;
+                let (rt2, re2) = self.infer(*e2)?;
+                let mut bound = HashSet::new();
+                self.ctx.bound(&mut bound);
+
+                if let Some(d) = declared {
+                    self.constraints
+                        .push(Constraint::ExplicitInst(rt1.clone(), d));
+                }
+
+                for (_, t) in self.assumptions.lookup(v) {
+                    self.constraints.push(Constraint::ImplicitInst(
+                        t.clone(),
+                        bound.clone(),
+                        rt1.clone(),
+                    ))
+                }
+                self.assumptions.remove(v);
+
+                let new_def = Definition::Val(v, rt1, None, re1);
+                Ok((rt2, Expr::Let(Box::new(new_def), Box::new(re2))))
+            }
+            Expr::Binary(op, e1, e2) => {
+                let (rt1, re1) = self.infer(*e1)?;
+                let (rt2, re2) = self.infer(*e2)?;
+                let tv = Type::TypeVar(self.source.next());
+                let actual = Type::Function(
+                    Box::new(rt1),
+                    Box::new(Type::Function(Box::new(rt2), Box::new(tv.clone()))),
+                );
+                let expected = Type::Function(
+                    Box::new(Type::I64),
+                    Box::new(Type::Function(Box::new(Type::I64), Box::new(Type::I64))),
+                );
+                self.constraints
+                    .push(Constraint::SameType(actual, expected));
+                Ok((tv, Expr::Binary(op, Box::new(re1), Box::new(re2))))
+            }
+            Expr::Negate(e) => {
+                let (rt, re) = self.infer(*e)?;
+                let tv = Type::TypeVar(self.source.next());
+                let actual = Type::Function(Box::new(rt), Box::new(tv.clone()));
+                let expected = Type::Function(Box::new(Type::I64), Box::new(Type::I64));
+                self.constraints
+                    .push(Constraint::SameType(actual, expected));
+                Ok((tv, Expr::Negate(Box::new(re))))
+            }
+            Expr::Apply(e1, e2) => {
+                let (rt1, re1) = self.infer(*e1)?;
+                let (rt2, re2) = self.infer(*e2)?;
+                let tv = Type::TypeVar(self.source.next());
+                let expected = Type::Function(Box::new(rt2), Box::new(tv.clone()));
+                self.constraints.push(Constraint::SameType(rt1, expected));
+                Ok((tv, Expr::Apply(Box::new(re1), Box::new(re2))))
+            }
         }
     }
 }
