@@ -188,10 +188,8 @@ impl Substitutable for Constraint {
 
 fn instantiate(source: &mut IdentSource, mut scheme: Scheme) -> Type {
     let mut subst = Substitution::empty();
-    let mut free = HashSet::new();
-    scheme.free_type_vars(&mut free);
-    for v in free {
-        subst.add(v, Type::TypeVar(source.next()));
+    for v in &scheme.type_vars {
+        subst.add(*v, Type::TypeVar(source.next()));
     }
     scheme.typ.substitute(&subst, None);
     scheme.typ
@@ -609,11 +607,9 @@ pub fn type_tree(ast: AST, source: &mut IdentSource) -> TypeResult<AST<Scheme>> 
     for v in assumed_vars {
         return Err(TypeError::UnboundVar(v));
     }
-    dbg!(&inferencer.constraints);
     let mut solver = Solver::new(inferencer.constraints, source);
     solver.solve()?;
 
-    dbg!(&solver.substitution);
     let mut typer = Typer::new(solver.substitution);
     Ok(typer.apply(tree))
 }

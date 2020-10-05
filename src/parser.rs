@@ -298,11 +298,9 @@ mod test {
     macro_rules! assert_parse {
         ($a:expr, $b:expr) => {{
             let tokens = lex($a);
-            dbg!(&tokens);
             assert!(tokens.is_ok());
             let tokens = tokens.unwrap();
             let res = parse(&tokens);
-            dbg!(&res);
             assert!(res.is_ok());
             assert_eq!(res.unwrap(), $b);
         }};
