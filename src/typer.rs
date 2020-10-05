@@ -438,13 +438,25 @@ impl<'a> Inferencer<'a> {
 
     fn infer(&mut self, ast: AST) -> AST<Type> {
         let mut definitions = Vec::new();
+        let mut usages = Vec::new();
         for Definition::Val(v, _, declared, e) in ast.definitions {
             let (rt, re) = self.infer_expr(e);
             if let Some(d) = declared {
                 self.constraints
                     .push(Constraint::ExplicitInst(rt.clone(), d))
             }
+            usages.push((v, rt.clone()));
             definitions.push(Definition::Val(v, rt, None, re))
+        }
+        for (v, rt) in usages {
+            for (_, t) in self.assumptions.lookup(v) {
+                self.constraints.push(Constraint::ImplicitInst(
+                    t.clone(),
+                    HashSet::new(),
+                    rt.clone(),
+                ))
+            }
+            self.assumptions.remove(v);
         }
         AST { definitions }
     }
