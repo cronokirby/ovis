@@ -23,8 +23,8 @@ impl fmt::Display for Unknown {
 pub enum Expr<T = Unknown> {
     /// A lambda abstraction / function litteral
     Lambda(Ident, T, Box<Expr<T>>),
-    /// A let expression, where we have a single definition before a body where it's used
-    Let(Box<Definition<T>>, Box<Expr<T>>),
+    /// A let expression, where we have a series of mutual declarations before the final expression
+    Let(Vec<Definition<T>>, Box<Expr<T>>),
     /// A reference to a variable name or definition
     Name(Ident),
     /// A reference to a positive number
@@ -71,10 +71,13 @@ impl<T: DisplayWithDict> DisplayWithDict for Expr<T> {
                 e2.fmt(f, dict)?;
                 write!(f, ")")
             }
-            Expr::Let(d, e) => {
-                write!(f, "(let (")?;
-                d.fmt(f, dict)?;
-                write!(f, ") ")?;
+            Expr::Let(defs, e) => {
+                write!(f, "(let")?;
+                for d in defs {
+                    write!(f, " ")?;
+                    d.fmt(f, dict)?;
+                }
+                write!(f, " ")?;
                 e.fmt(f, dict)?;
                 write!(f, ")")
             }
@@ -239,11 +242,7 @@ impl<'a> Simplifier<'a> {
             parser::Expr::StringLitt(s) => Expr::StringLitt(s),
             parser::Expr::NumberLitt(n) => Expr::NumberLitt(n),
             parser::Expr::Let(defs, body) => {
-                let mut acc = self.expr(*body);
-                for d in self.definitions(defs).into_iter().rev() {
-                    acc = Expr::Let(Box::new(d), Box::new(acc));
-                }
-                acc
+                Expr::Let(self.definitions(defs), Box::new(self.expr(*body)))
             }
             parser::Expr::Negate(body) => Expr::Negate(Box::new(self.expr(*body))),
             parser::Expr::Binary(op, e1, e2) => {

@@ -1,5 +1,7 @@
 main : I64
 main =
   let y = 3
-      z = 4
+      z =
+        let x = 4
+        in x + x
   in y + z

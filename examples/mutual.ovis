@@ -1,0 +1,9 @@
+foo : I64
+foo =
+  let 
+      x = y + y
+      y = x + x
+  in x
+
+main : I64
+main = foo

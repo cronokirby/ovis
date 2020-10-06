@@ -376,29 +376,10 @@ impl<'a> Inferencer<'a> {
                     Expr::Lambda(v, tv, Box::new(re)),
                 )
             }
-            Expr::Let(def, e2) => {
-                let Definition::Val(v, _, declared, e1) = *def;
-                let (rt1, re1) = self.infer_expr(e1);
+            Expr::Let(defs, e2) => {
                 let (rt2, re2) = self.infer_expr(*e2);
-                let mut bound = HashSet::new();
-                self.ctx.bound(&mut bound);
-
-                if let Some(d) = declared {
-                    self.constraints
-                        .push(Constraint::ExplicitInst(rt1.clone(), d));
-                }
-
-                for (_, t) in self.assumptions.lookup(v) {
-                    self.constraints.push(Constraint::ImplicitInst(
-                        t.clone(),
-                        bound.clone(),
-                        rt1.clone(),
-                    ))
-                }
-                self.assumptions.remove(v);
-
-                let new_def = Definition::Val(v, rt1, None, re1);
-                (rt2, Expr::Let(Box::new(new_def), Box::new(re2)))
+                let definitions = self.infer_defs(defs);
+                (rt2, Expr::Let(definitions, Box::new(re2)))
             }
             Expr::Binary(op, e1, e2) => {
                 let (rt1, re1) = self.infer_expr(*e1);
@@ -436,10 +417,10 @@ impl<'a> Inferencer<'a> {
         }
     }
 
-    fn infer(&mut self, ast: AST) -> AST<Type> {
+    fn infer_defs(&mut self, defs: Vec<Definition>) -> Vec<Definition<Type>> {
         let mut definitions = Vec::new();
         let mut usages = Vec::new();
-        for Definition::Val(v, _, declared, e) in ast.definitions {
+        for Definition::Val(v, _, declared, e) in defs {
             let (rt, re) = self.infer_expr(e);
             if let Some(d) = declared {
                 self.constraints
@@ -448,16 +429,25 @@ impl<'a> Inferencer<'a> {
             usages.push((v, rt.clone()));
             definitions.push(Definition::Val(v, rt, None, re))
         }
+
+        let mut bound = HashSet::new();
+        self.ctx.bound(&mut bound);
+
         for (v, rt) in usages {
             for (_, t) in self.assumptions.lookup(v) {
                 self.constraints.push(Constraint::ImplicitInst(
                     t.clone(),
-                    HashSet::new(),
+                    bound.clone(),
                     rt.clone(),
                 ))
             }
             self.assumptions.remove(v);
         }
+        definitions
+    }
+
+    fn infer(&mut self, ast: AST) -> AST<Type> {
+        let definitions = self.infer_defs(ast.definitions);
         AST { definitions }
     }
 }
@@ -587,22 +577,17 @@ impl Typer {
                 }
                 Expr::Lambda(v, scheme, Box::new(self.apply_expr(*e)))
             }
-            Expr::Let(def, e2) => {
-                let Definition::Val(v, t, _, e1) = *def;
-                let s1 = self.scheme_for(t);
-                for b in &s1.type_vars {
-                    self.bound.insert(*b);
-                }
-                let r1 = self.apply_expr(e1);
+            Expr::Let(defs, e2) => {
+                let definitions = self.apply_defs(defs);
                 let r2 = self.apply_expr(*e2);
-                Expr::Let(Box::new(Definition::Val(v, s1, None, r1)), Box::new(r2))
+                Expr::Let(definitions, Box::new(r2))
             }
         }
     }
 
-    fn apply(&mut self, ast: AST<Type>) -> AST<Scheme> {
+    fn apply_defs(&mut self, defs: Vec<Definition<Type>>) -> Vec<Definition<Scheme>> {
         let mut definitions = Vec::new();
-        for Definition::Val(v, t, _, e) in ast.definitions {
+        for Definition::Val(v, t, _, e) in defs {
             let s = self.scheme_for(t);
             for b in &s.type_vars {
                 self.bound.insert(*b);
@@ -610,6 +595,11 @@ impl Typer {
             let r = self.apply_expr(e);
             definitions.push(Definition::Val(v, s, None, r))
         }
+        definitions
+    }
+
+    fn apply(&mut self, ast: AST<Type>) -> AST<Scheme> {
+        let definitions = self.apply_defs(ast.definitions);
         AST { definitions }
     }
 }
