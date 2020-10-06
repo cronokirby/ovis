@@ -604,6 +604,9 @@ impl Typer {
         let mut definitions = Vec::new();
         for Definition::Val(v, t, _, e) in ast.definitions {
             let s = self.scheme_for(t);
+            for b in &s.type_vars {
+                self.bound.insert(*b);
+            }
             let r = self.apply_expr(e);
             definitions.push(Definition::Val(v, s, None, r))
         }
