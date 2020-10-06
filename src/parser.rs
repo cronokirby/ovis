@@ -104,7 +104,7 @@ pub enum Expr {
     StringLitt(String),
     Binary(BinOp, Box<Expr>, Box<Expr>),
     Negate(Box<Expr>),
-    Apply(Box<Expr>, Box<Expr>),
+    Apply(Box<Expr>, Vec<Expr>),
 }
 
 impl fmt::Display for Expr {
@@ -128,7 +128,14 @@ impl fmt::Display for Expr {
             Expr::StringLitt(s) => write!(f, "\"{}\"", s)?,
             Expr::Binary(op, e1, e2) => write!(f, "({} {} {})", op, e1, e2)?,
             Expr::Negate(e) => write!(f, "(- {})", e)?,
-            Expr::Apply(e1, e2) => write!(f, "(apply {} {})", e1, e2)?,
+            Expr::Apply(e, es) => {
+                write!(f, "(apply {}", e)?;
+
+                for e in es {
+                    write!(f, " {}", e)?;
+                }
+                write!(f, ")")?
+            }
             Expr::Let(defs, e) => {
                 write!(f, "(let (")?;
                 let mut i = 0;
@@ -232,7 +239,7 @@ peg::parser! {
             = [Minus] e:app_expr() { Expr::Negate(Box::new(e)) } / e:app_expr() { e }
 
         rule app_expr() -> Expr
-            = f:factor() x:factor() { Expr::Apply(Box::new(f), Box::new(x))}
+            = f:factor() fs:factor()+ { Expr::Apply(Box::new(f), fs) }
             / e:factor() { e }
 
         rule factor() -> Expr
@@ -493,6 +500,24 @@ mod test {
                 )
             )
         );
+    }
+
+    #[test]
+    fn multiple_applications_parse() {
+        assert_parse!(
+            "x = f 1 2 3",
+            val_def!(
+                "x",
+                Expr::Apply(
+                    Box::new(Expr::Name("f".into())),
+                    vec![
+                        Expr::NumberLitt(1),
+                        Expr::NumberLitt(2),
+                        Expr::NumberLitt(3)
+                    ]
+                )
+            )
+        )
     }
 
     #[test]

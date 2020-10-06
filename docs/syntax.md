@@ -97,7 +97,7 @@ arithmetic_expr := add_expr
 add_expr := mul_expr "+" mul_expr | mul_expr "-" mul_expr | mul_expr
 mul_expr := add_expr "*" add_expr | app_expr "/" app_expr | app_expr
 unary_minus_expr := "-" app_expr | app_expr
-app_expr := factor factor | factor
+app_expr := factor app_expr | factor
 factor := name | number | (expr)
 
 type_annotation := name ":" scheme

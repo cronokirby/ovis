@@ -248,8 +248,12 @@ impl<'a> Simplifier<'a> {
             parser::Expr::Binary(op, e1, e2) => {
                 Expr::Binary(op, Box::new(self.expr(*e1)), Box::new(self.expr(*e2)))
             }
-            parser::Expr::Apply(e1, e2) => {
-                Expr::Apply(Box::new(self.expr(*e1)), Box::new(self.expr(*e2)))
+            parser::Expr::Apply(f, es) => {
+                let mut acc = self.expr(*f);
+                for e in es {
+                    acc = Expr::Apply(Box::new(acc), Box::new(self.expr(e)));
+                }
+                acc
             }
             parser::Expr::Lambda(bindings, body) => {
                 let mut seed = self.expr(*body);
