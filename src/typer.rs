@@ -618,3 +618,58 @@ pub fn type_tree(ast: AST, source: &mut IdentSource) -> TypeResult<AST<Scheme>> 
     let mut typer = Typer::new(solver.substitution);
     Ok(typer.apply(tree))
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::identifiers::IdentSource;
+    use crate::lexer::lex;
+    use crate::parser::parse;
+    use crate::simplifier::simplify;
+
+    macro_rules! get_type_tree {
+        ($a:expr) => {{
+            let tokens = lex($a);
+            assert!(tokens.is_ok());
+            let tokens = tokens.unwrap();
+            let parsed = parse(&tokens);
+            assert!(parsed.is_ok());
+            let parsed = parsed.unwrap();
+            let mut source = IdentSource::new();
+            let (simplified, _) = simplify(parsed, &mut source);
+            let typed = type_tree(simplified, &mut source);
+            typed
+        }};
+    }
+
+    /// Assert that a string correctly type checks
+    macro_rules! assert_type_checks {
+        ($a:expr) => {{
+            let typed = get_type_tree!($a);
+            assert!(typed.is_ok())
+        }};
+    }
+
+    macro_rules! assert_type_fails {
+        ($a:expr) => {{
+            let typed = get_type_tree!($a);
+            assert!(!typed.is_ok())
+        }};
+    }
+
+    #[test]
+    fn arithmetic_type_checks() {
+        assert_type_checks!("x = 3; y = 2 + 2 / 3 * 4");
+        assert_type_fails!("x = 2 + \"foo\"")
+    }
+
+    #[test]
+    fn polymorphism_works() {
+        assert_type_checks!(r#"id = \x -> x; y = id 3; z = id "foo""#);
+    }
+
+    #[test]
+    fn mutual_definitions_work() {
+        assert_type_checks!("x1 : I64; x1 = let { y : I64; y = z; z = y } in x2; x2 = x1");
+    }
+}
