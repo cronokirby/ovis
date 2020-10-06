@@ -1,0 +1,8 @@
+id : {a} => a -> a
+id = \x -> x
+
+y : String
+y = id "foo"
+
+main : I64
+main = id 43

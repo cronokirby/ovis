@@ -1,0 +1,5 @@
+main : I64
+main =
+  let y = 3
+      z = 4
+  in y + z
