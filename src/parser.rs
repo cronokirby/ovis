@@ -16,6 +16,8 @@ pub enum BinOp {
     Mul,
     /// The / operator
     Div,
+    /// The concatenation operator <>
+    Concat,
 }
 
 impl fmt::Display for BinOp {
@@ -25,6 +27,7 @@ impl fmt::Display for BinOp {
             BinOp::Sub => write!(f, "-"),
             BinOp::Mul => write!(f, "*"),
             BinOp::Div => write!(f, "/"),
+            BinOp::Concat => write!(f, "<>"),
         }
     }
 }
@@ -226,6 +229,8 @@ peg::parser! {
             = [Let] [LeftBrace] ds:(definition() ** [Semicolon]) [RightBrace] [In] e:expr() { Expr::Let(ds, Box::new(e)) }
 
         rule arithmetic() -> Expr = precedence!{
+            a:(@) [LRAngle] b:@ { Expr::Binary(BinOp::Concat, Box::new(a), Box::new(b)) }
+            --
             a:(@) [Plus] b:@ { Expr::Binary(BinOp::Add, Box::new(a), Box::new(b)) }
             a:(@) [Minus] b:@ { Expr::Binary(BinOp::Sub, Box::new(a), Box::new(b)) }
             --
@@ -366,6 +371,11 @@ mod test {
                 )
             )
         );
+    }
+
+    #[test]
+    fn operators_work() {
+        assert_parse!("x = 2 <> 4", val_def!("x", binary!(BinOp::Concat, 2, 4)));
     }
 
     #[test]

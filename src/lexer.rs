@@ -121,6 +121,8 @@ pub enum Token {
     FSlash,
     /// The "\" symbol
     BSlash,
+    /// The "<>" symbol
+    LRAngle,
     /// Opening "("
     LeftParens,
     /// Closing ")"
@@ -161,6 +163,7 @@ impl fmt::Display for Token {
             Token::Asterisk => write!(f, "*"),
             Token::FSlash => write!(f, "/"),
             Token::BSlash => write!(f, "\\"),
+            Token::LRAngle => write!(f, "<>"),
             Token::LeftParens => write!(f, "("),
             Token::RightParens => write!(f, ")"),
             Token::LeftBrace => write!(f, "{{"),
@@ -221,6 +224,8 @@ fn can_continue_identifier(c: char) -> bool {
 pub enum LexError {
     /// We weren't expecting this character at this position
     Unexpected(char),
+    /// We weren't expecting the file to end at this point
+    UnexpectedEOF,
     /// We don't know what this (primitive) type is
     ///
     /// This is an error at this stage, since all valid types are known lexically
@@ -240,6 +245,7 @@ impl fmt::Display for LexError {
         use LexError::*;
         match self {
             Unexpected(c) => writeln!(f, "Unexpected character: '{}'", c),
+            UnexpectedEOF => writeln!(f, "Unexpected EOF"),
             UnknownPrimitiveType(s) => writeln!(f, "Type {} is not a primitive type", s),
             UnmatchedLeftBrace => writeln!(f, "Unmatched `{{` encountered"),
             UnmatchedRightBrace => writeln!(f, "Unmatched explicit `}}` encountered"),
@@ -344,6 +350,14 @@ impl<'a> Iterator for Tokenizer<'a> {
                     Ok(RightArrow)
                 }
                 _ => Ok(Minus),
+            },
+            '<' => match self.chars.peek_one() {
+                Some('>') => {
+                    self.chars.next_one();
+                    Ok(Token::LRAngle)
+                }
+                Some(c) => Err(LexError::Unexpected(*c)),
+                None => Err(LexError::UnexpectedEOF),
             },
             '"' => self
                 .string_litt()
@@ -560,10 +574,10 @@ mod test {
     #[test]
     fn lexing_operators_works() {
         assert_lex!(
-            "= : ; , -> => + - * / \\",
+            "= : ; , -> => + - * / \\ <>",
             vec![
                 LeftBrace, Equal, Colon, Semicolon, Comma, RightArrow, FatArrow, Plus, Minus,
-                Asterisk, FSlash, BSlash, RightBrace
+                Asterisk, FSlash, BSlash, LRAngle, RightBrace
             ]
         );
     }

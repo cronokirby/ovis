@@ -1,5 +1,6 @@
 use crate::identifiers::{Ident, IdentSource};
 use crate::interner::{Dictionary, DisplayWithDict};
+use crate::parser::BinOp;
 use crate::simplifier::{Definition, Expr, Scheme, Type, AST};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Formatter, Result as FmtResult};
@@ -330,6 +331,19 @@ impl DisplayWithDict for TypeError {
     }
 }
 
+fn expected(op: &BinOp) -> Type {
+    match op {
+        BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div => Type::Function(
+            Box::new(Type::I64),
+            Box::new(Type::Function(Box::new(Type::I64), Box::new(Type::I64))),
+        ),
+        BinOp::Concat => Type::Function(
+            Box::new(Type::Strng),
+            Box::new(Type::Function(Box::new(Type::Strng), Box::new(Type::Strng))),
+        ),
+    }
+}
+
 pub type TypeResult<T> = Result<T, TypeError>;
 
 struct Inferencer<'a> {
@@ -389,10 +403,7 @@ impl<'a> Inferencer<'a> {
                     Box::new(rt1),
                     Box::new(Type::Function(Box::new(rt2), Box::new(tv.clone()))),
                 );
-                let expected = Type::Function(
-                    Box::new(Type::I64),
-                    Box::new(Type::Function(Box::new(Type::I64), Box::new(Type::I64))),
-                );
+                let expected = expected(&op);
                 self.constraints
                     .push(Constraint::SameType(actual, expected));
                 (tv, Expr::Binary(op, Box::new(re1), Box::new(re2)))
