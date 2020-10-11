@@ -1,3 +1,4 @@
+mod g_machine;
 mod identifiers;
 mod interner;
 mod lexer;
