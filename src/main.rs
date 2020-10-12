@@ -131,7 +131,7 @@ fn real_main(args: Args) -> Result<(), CompileError> {
         println!("Parsed:\n\n{}", ast);
         return Ok(());
     }
-    let (simplified, dict, main) = simplifier::simplify(ast, &mut source);
+    let (simplified, dict, builtins) = simplifier::simplify(ast, &mut source);
     if args.stage <= Stage::Simplify {
         println!("Simplified:\n\n{}", WithDict::new(&simplified, &dict));
         return Ok(());
@@ -142,7 +142,7 @@ fn real_main(args: Args) -> Result<(), CompileError> {
         println!("Typed:\n\n{}", WithDict::new(&typed, &dict));
         return Ok(());
     }
-    let g_compiled = g_machine::compile(typed, main);
+    let g_compiled = g_machine::compile(typed, &builtins);
     if args.stage <= Stage::GMachine {
         println!("G-Machine:");
         for g in g_compiled {
@@ -152,7 +152,7 @@ fn real_main(args: Args) -> Result<(), CompileError> {
         return Ok(());
     }
     if args.stage == Stage::Interpret {
-        let value = g_machine::interpret(g_compiled, main);
+        let value = g_machine::interpret(g_compiled, builtins.ident(simplifier::Builtin::Main));
         println!("Interpreted:\n{:?}", value);
         Ok(())
     } else {

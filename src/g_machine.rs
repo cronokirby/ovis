@@ -1,7 +1,10 @@
 use crate::interner::DisplayWithDict;
 use crate::parser::BinOp;
-use crate::simplifier::{Scheme, AST};
-use crate::{identifiers::Ident, interner::Dictionary};
+use crate::simplifier::{Builtin, Builtins, Definition, Expr, Scheme, Type, AST};
+use crate::{
+    identifiers::{Ident, IdentSource},
+    interner::Dictionary,
+};
 use std::collections::HashMap;
 use std::fmt;
 
@@ -376,11 +379,237 @@ pub fn interpret(globals: Vec<GlobalInfo>, entry: Ident) -> Option<Value> {
     machine.top_value()
 }
 
-pub fn compile(ast: AST<Scheme>, main: Ident) -> Vec<GlobalInfo> {
-    let g: GlobalInfo = GlobalInfo {
-        name: main,
-        num_args: 0,
-        instructions: vec![Instruction::PushInt(42)],
+fn num_args(scheme: Scheme) -> u64 {
+    let mut typ = scheme.typ;
+    let mut count = 0;
+    while let Type::Function(_, r) = typ {
+        typ = *r;
+        count += 1
+    }
+    count
+}
+
+#[derive(Copy, Clone)]
+enum Primitive {
+    Add,
+    Sub,
+    Div,
+    Mul,
+    Concat,
+}
+
+impl Primitive {
+    fn index(&self) -> usize {
+        match self {
+            Primitive::Add => 0,
+            Primitive::Sub => 1,
+            Primitive::Div => 2,
+            Primitive::Mul => 3,
+            Primitive::Concat => 4,
+        }
+    }
+
+    fn global(&self, name: Ident) -> GlobalInfo {
+        use Instruction::*;
+
+        let (num_args, instructions) = match self {
+            Primitive::Add => (
+                2,
+                vec![
+                    Push(1),
+                    Eval,
+                    Push(1),
+                    Eval,
+                    Binary(BinOp::Add),
+                    Update(2),
+                    Pop(2),
+                    Unwind,
+                ],
+            ),
+            Primitive::Sub => (
+                2,
+                vec![
+                    Push(1),
+                    Eval,
+                    Push(1),
+                    Eval,
+                    Binary(BinOp::Sub),
+                    Update(2),
+                    Pop(2),
+                    Unwind,
+                ],
+            ),
+            Primitive::Div => (
+                2,
+                vec![
+                    Push(1),
+                    Eval,
+                    Push(1),
+                    Eval,
+                    Binary(BinOp::Div),
+                    Update(2),
+                    Pop(2),
+                    Unwind,
+                ],
+            ),
+            Primitive::Mul => (
+                2,
+                vec![
+                    Push(1),
+                    Eval,
+                    Push(1),
+                    Eval,
+                    Binary(BinOp::Mul),
+                    Update(2),
+                    Pop(2),
+                    Unwind,
+                ],
+            ),
+            Primitive::Concat => (
+                2,
+                vec![
+                    Push(1),
+                    Eval,
+                    Push(1),
+                    Eval,
+                    Binary(BinOp::Concat),
+                    Update(2),
+                    Pop(2),
+                    Unwind,
+                ],
+            ),
+        };
+        GlobalInfo {
+            name,
+            num_args,
+            instructions,
+        }
+    }
+}
+
+fn builtin(builtins: &Builtins, b: Builtin) -> GlobalInfo {
+    use Instruction::*;
+
+    let name = builtins.ident(b);
+    let (num_args, instructions) = match b {
+        Builtin::Add => (
+            2,
+            vec![
+                Push(1),
+                Eval,
+                Push(1),
+                Eval,
+                Binary(BinOp::Add),
+                Update(2),
+                Pop(2),
+                Unwind,
+            ],
+        ),
+        Builtin::Sub => (
+            2,
+            vec![
+                Push(1),
+                Eval,
+                Push(1),
+                Eval,
+                Binary(BinOp::Sub),
+                Update(2),
+                Pop(2),
+                Unwind,
+            ],
+        ),
+        Builtin::Mul => (
+            2,
+            vec![
+                Push(1),
+                Eval,
+                Push(1),
+                Eval,
+                Binary(BinOp::Mul),
+                Update(2),
+                Pop(2),
+                Unwind,
+            ],
+        ),
+        Builtin::Div => (
+            2,
+            vec![
+                Push(1),
+                Eval,
+                Push(1),
+                Eval,
+                Binary(BinOp::Div),
+                Update(2),
+                Pop(2),
+                Unwind,
+            ],
+        ),
+        Builtin::Concat => (
+            2,
+            vec![
+                Push(1),
+                Eval,
+                Push(1),
+                Eval,
+                Binary(BinOp::Concat),
+                Update(2),
+                Pop(2),
+                Unwind,
+            ],
+        ),
+        _ => unreachable!(),
     };
-    vec![g]
+    GlobalInfo {
+        name,
+        num_args,
+        instructions,
+    }
+}
+
+fn compile_expr(expr: Expr<Scheme>, builtins: &Builtins, buf: &mut Vec<Instruction>) {
+    use Instruction::*;
+
+    match expr {
+        Expr::NumberLitt(n) => buf.push(PushInt(n)),
+        Expr::StringLitt(s) => buf.push(PushString(s)),
+        Expr::Binary(op, l, r) => {
+            compile_expr(*r, builtins, buf);
+            compile_expr(*l, builtins, buf);
+            let prim = match op {
+                BinOp::Add => Builtin::Add,
+                BinOp::Sub => Builtin::Sub,
+                BinOp::Mul => Builtin::Mul,
+                BinOp::Div => Builtin::Div,
+                BinOp::Concat => Builtin::Concat,
+            };
+            buf.push(PushGlobal(builtins.ident(prim)));
+        }
+        _ => unimplemented!(),
+    }
+}
+
+pub fn compile(ast: AST<Scheme>, builtins: &Builtins) -> Vec<GlobalInfo> {
+    let mut globals = Vec::new();
+    let bs = vec![
+        Builtin::Add,
+        Builtin::Mul,
+        Builtin::Div,
+        Builtin::Sub,
+        Builtin::Concat,
+    ];
+    for b in bs {
+        globals.push(builtin(builtins, b));
+    }
+    for def in ast.definitions {
+        let Definition::Val(name, scheme, _, e) = def;
+        let num_args = num_args(scheme);
+        let mut instructions = Vec::new();
+        compile_expr(e, builtins, &mut instructions);
+        globals.push(GlobalInfo {
+            name,
+            num_args,
+            instructions,
+        })
+    }
+    globals
 }

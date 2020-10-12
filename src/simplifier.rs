@@ -301,15 +301,67 @@ impl<'a> Simplifier<'a> {
     }
 }
 
-const MAIN: &'static str = "main";
+#[derive(Copy, Clone)]
+pub enum Builtin {
+    Main,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Concat,
+}
+
+impl Builtin {
+    fn name(&self) -> &'static str {
+        match self {
+            Builtin::Main => "main",
+            Builtin::Add => "$__prim__+",
+            Builtin::Sub => "$__prim__-",
+            Builtin::Mul => "$__prim__*",
+            Builtin::Div => "$__prim__/",
+            Builtin::Concat => "$__prim__<>",
+        }
+    }
+
+    fn index(&self) -> usize {
+        match self {
+            Builtin::Main => 0,
+            Builtin::Add => 1,
+            Builtin::Sub => 2,
+            Builtin::Mul => 3,
+            Builtin::Div => 4,
+            Builtin::Concat => 5,
+        }
+    }
+}
+
+const ALL_BUILTINS: [Builtin; 6] = [
+    Builtin::Main,
+    Builtin::Add,
+    Builtin::Sub,
+    Builtin::Mul,
+    Builtin::Div,
+    Builtin::Concat,
+];
+
+pub struct Builtins(Vec<Ident>);
+
+impl Builtins {
+    pub fn ident(&self, builtin: Builtin) -> Ident {
+        self.0[builtin.index()]
+    }
+}
 
 /// Simplify a parsed AST to a representation of an equivalent program.
 ///
 /// We want to simplify to remove so-called "Syntax Sugar", allowing us to
 /// work more directly with certain constructs
-pub fn simplify(parsed: parser::AST, source: &mut IdentSource) -> (AST, Dictionary, Ident) {
+pub fn simplify(parsed: parser::AST, source: &mut IdentSource) -> (AST, Dictionary, Builtins) {
     let mut simplifier = Simplifier::new(source);
     let ast = simplifier.ast(parsed);
-    let main = simplifier.interner.ident(MAIN.to_string());
-    (ast, simplifier.interner.dictionary(), main)
+    let mut builtins = Vec::new();
+    for b in &ALL_BUILTINS {
+        builtins.push(simplifier.interner.ident(b.name().to_string()));
+    }
+    (ast, simplifier.interner.dictionary(), Builtins(builtins))
 }

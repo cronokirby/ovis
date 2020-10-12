@@ -5,7 +5,7 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 /// This idea is that anywhere we could have used a string based identifier,
 /// we can replace that exact identifier with this instead, saving on space.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub struct Ident(u64);
+pub struct Ident(pub u64);
 
 impl Ident {
     // Return the next identifier after this one
