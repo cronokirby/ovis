@@ -34,6 +34,12 @@ enum Instruction {
     Alloc,
 }
 
+pub struct GlobalInfo {
+    name: Ident,
+    num_args: u64,
+    instructions: Vec<Instruction>,
+}
+
 #[derive(Copy, Clone, Debug)]
 struct Pointer(u64);
 
@@ -137,9 +143,11 @@ impl Machine {
         }
     }
 
-    fn add_global(&mut self, name: Ident, num_args: u64, instructions: Vec<Instruction>) {
-        let addr = self.heap.alloc(HeapItem::Global(num_args, instructions));
-        self.globals.insert(name, addr);
+    fn add_global(&mut self, info: GlobalInfo) {
+        let addr = self
+            .heap
+            .alloc(HeapItem::Global(info.num_args, info.instructions));
+        self.globals.insert(info.name, addr);
     }
 
     fn pop(&mut self) -> Pointer {
@@ -301,4 +309,35 @@ impl Machine {
             self.handle(instr);
         }
     }
+
+    fn top_value(&mut self) -> Option<Value> {
+        let top = self.stack[self.stack.len() - 1];
+        match self.heap.at(top) {
+            HeapItem::I64(i) => Some(Value::I64(*i)),
+            HeapItem::Strng(s) => Some(Value::Strng(s.clone())),
+            _ => None,
+        }
+    }
+}
+
+/// Represents the kind of value that can result from interpretation
+pub enum Value {
+    /// An integer value
+    I64(i64),
+    /// String value
+    Strng(String),
+}
+
+pub fn interpret(globals: Vec<GlobalInfo>, entry: Ident) -> Option<Value> {
+    let instructions = globals
+        .iter()
+        .find(|g| g.name == entry)
+        .map(|g| g.instructions.clone())
+        .expect("UNTHINKABLE: no such entry found");
+    let mut machine = Machine::new(instructions);
+    for g in globals {
+        machine.add_global(g);
+    }
+    machine.execute();
+    machine.top_value()
 }
