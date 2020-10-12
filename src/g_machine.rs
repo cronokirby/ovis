@@ -169,7 +169,8 @@ struct Machine {
 }
 
 impl Machine {
-    fn new(instructions: Vec<Instruction>) -> Self {
+    fn new(mut instructions: Vec<Instruction>) -> Self {
+        instructions.reverse();
         Self {
             instructions,
             stack: Vec::new(),
@@ -304,6 +305,7 @@ impl Machine {
                     self.stack[ind] = self.heap.at_app_right(app);
                 }
                 self.instructions = c.clone();
+                self.instructions.reverse();
             }
             HeapItem::Ind(i) => {
                 self.stack.pop();
@@ -324,6 +326,7 @@ impl Machine {
     }
 
     fn handle(&mut self, instr: Instruction) {
+        dbg!(&instr);
         match instr {
             Instruction::PushInt(n) => self.push_int(n),
             Instruction::PushString(s) => self.push_string(s),
@@ -347,8 +350,8 @@ impl Machine {
     }
 
     fn top_value(&mut self) -> Option<Value> {
-        let top = self.stack[self.stack.len() - 1];
-        match self.heap.at(top) {
+        let top = self.stack.last().unwrap();
+        match self.heap.at(*top) {
             HeapItem::I64(i) => Some(Value::I64(*i)),
             HeapItem::Strng(s) => Some(Value::Strng(s.clone())),
             _ => None,
@@ -366,12 +369,7 @@ pub enum Value {
 }
 
 pub fn interpret(globals: Vec<GlobalInfo>, entry: Ident) -> Option<Value> {
-    let instructions = globals
-        .iter()
-        .find(|g| g.name == entry)
-        .map(|g| g.instructions.clone())
-        .expect("UNTHINKABLE: no such entry found");
-    let mut machine = Machine::new(instructions);
+    let mut machine = Machine::new(vec![Instruction::PushGlobal(entry), Instruction::Unwind]);
     for g in globals {
         machine.add_global(g);
     }
@@ -485,6 +483,8 @@ fn compile_expr(expr: Expr<Scheme>, builtins: &Builtins, buf: &mut Vec<Instructi
                 BinOp::Concat => Builtin::Concat,
             };
             buf.push(PushGlobal(builtins.ident(prim)));
+            buf.push(MkApp);
+            buf.push(MkApp);
         }
         _ => unimplemented!(),
     }
@@ -507,6 +507,8 @@ pub fn compile(ast: AST<Scheme>, builtins: &Builtins) -> Vec<GlobalInfo> {
         let num_args = num_args(scheme);
         let mut instructions = Vec::new();
         compile_expr(e, builtins, &mut instructions);
+        instructions.push(Instruction::Slide(num_args + 1));
+        instructions.push(Instruction::Unwind);
         globals.push(GlobalInfo {
             name,
             num_args,
