@@ -295,4 +295,10 @@ impl Machine {
             Instruction::Alloc => self.alloc(),
         }
     }
+
+    fn execute(&mut self) {
+        while let Some(instr) = self.instructions.pop() {
+            self.handle(instr);
+        }
+    }
 }
