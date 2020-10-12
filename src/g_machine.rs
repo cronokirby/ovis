@@ -1,11 +1,12 @@
 use crate::identifiers::Ident;
 use crate::parser::BinOp;
 use std::collections::HashMap;
+use std::fmt;
 
 /// Represents an instruction for our abstract machine.
 ///
 /// These are all used to manipulate the graph-reduction machine.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 enum Instruction {
     /// Push an integer onto the stack
     PushInt(i64),
@@ -27,16 +28,20 @@ enum Instruction {
     MkApp,
     /// Evaluate the spine of a chain of evaluations
     Unwind,
-    /// Return from a specific focus
-    UnwindReturn,
     /// Move our focus to another part of the graph
     Eval,
     /// Allocate a placeholder for some node
     Alloc,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 struct Pointer(u64);
+
+impl fmt::Display for Pointer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:#X}", self.0)
+    }
+}
 
 #[derive(Debug)]
 struct Frame {
@@ -53,6 +58,9 @@ enum HeapItem {
     Strng(String),
     /// An indirection pointing to some other item on the heap
     Ind(Pointer),
+    App(Pointer, Pointer),
+    /// Global function information
+    Global(u64, Vec<Instruction>),
 }
 
 /// Represents a heap where we can allocate scratch memory for nodes
@@ -74,9 +82,38 @@ impl Heap {
         Pointer(self.0.len() as u64 - 1)
     }
 
+    fn set(&mut self, at: Pointer, item: HeapItem) {
+        self.0[at.0 as usize] = item;
+    }
+
     /// Retrieve a reference to the item at a certain address in the heap
     fn at(&self, p: Pointer) -> &HeapItem {
         &self.0[p.0 as usize]
+    }
+
+    /// Retrieve the integer at a certain address, panicing if not
+    fn at_as_int(&self, p: Pointer) -> i64 {
+        match self.at(p) {
+            HeapItem::I64(i) => *i,
+            item => panic!("UNTHINKABLE: expected I64 at {} found: {:?}", p, item),
+        }
+    }
+
+    fn at_as_string(&self, p: Pointer) -> &String {
+        match self.at(p) {
+            HeapItem::Strng(s) => s,
+            item => panic!("UNTHINKABLE: expected String at {} found: {:?}", p, item),
+        }
+    }
+
+    fn at_app_right(&self, p: Pointer) -> Pointer {
+        match self.at(p) {
+            HeapItem::App(_, r) => *r,
+            item => panic!(
+                "UNTHINKABLE: expected application at {} found: {:?}",
+                p, item
+            ),
+        }
     }
 }
 
@@ -97,6 +134,165 @@ impl Machine {
             dump: Vec::new(),
             heap: Heap::new(),
             globals: HashMap::new(),
+        }
+    }
+
+    fn add_global(&mut self, name: Ident, num_args: u64, instructions: Vec<Instruction>) {
+        let addr = self.heap.alloc(HeapItem::Global(num_args, instructions));
+        self.globals.insert(name, addr);
+    }
+
+    fn pop(&mut self) -> Pointer {
+        self.stack.pop().expect("UNTHINKABLE: Not enough stack")
+    }
+
+    fn push_int(&mut self, n: i64) {
+        let a = self.heap.alloc(HeapItem::I64(n));
+        self.stack.push(a);
+    }
+
+    fn push_string(&mut self, s: String) {
+        let a = self.heap.alloc(HeapItem::Strng(s));
+        self.stack.push(a);
+    }
+
+    fn push_global(&mut self, g: Ident) {
+        let &a = self
+            .globals
+            .get(&g)
+            .expect(&format!("UNTHINKABLE: Couldn't find global {}", g));
+        self.stack.push(a);
+    }
+
+    fn binary(&mut self, op: BinOp) {
+        let a1 = self.pop();
+        let a2 = self.pop();
+        match op {
+            BinOp::Concat => {
+                let s1 = self.heap.at_as_string(a1);
+                let s2 = self.heap.at_as_string(a2);
+                let mut res = String::new();
+                res.push_str(s1);
+                res.push_str(s2);
+                self.push_string(res);
+            }
+            BinOp::Add => {
+                let i1 = self.heap.at_as_int(a1);
+                let i2 = self.heap.at_as_int(a2);
+                self.push_int(i1 + i2);
+            }
+            BinOp::Sub => {
+                let i1 = self.heap.at_as_int(a1);
+                let i2 = self.heap.at_as_int(a2);
+                self.push_int(i1 - i2);
+            }
+            BinOp::Mul => {
+                let i1 = self.heap.at_as_int(a1);
+                let i2 = self.heap.at_as_int(a2);
+                self.push_int(i1 * i2);
+            }
+            BinOp::Div => {
+                let i1 = self.heap.at_as_int(a1);
+                let i2 = self.heap.at_as_int(a2);
+                self.push_int(i1 * i2);
+            }
+        }
+    }
+
+    fn pop_n(&mut self, n: u64) {
+        for _ in 0..n {
+            self.stack.pop();
+        }
+    }
+
+    fn push_n(&mut self, n: u64) {
+        let item = self.stack[self.stack.len() - 1 - (n as usize)];
+        self.stack.push(item);
+    }
+
+    fn slide(&mut self, n: u64) {
+        let top = self.pop();
+        self.pop_n(n);
+        self.stack.push(top);
+    }
+
+    fn mkapp(&mut self) {
+        let f = self.pop();
+        let a = self.pop();
+        let addr = self.heap.alloc(HeapItem::App(f, a));
+        self.stack.push(addr)
+    }
+
+    fn update(&mut self, n: u64) {
+        let a = self.pop();
+        let item = self.stack[self.stack.len() - 1 - (n as usize)];
+        self.heap.set(a, HeapItem::Ind(item));
+    }
+
+    fn alloc(&mut self) {
+        let a = self.heap.alloc(HeapItem::Ind(Pointer(0)));
+        self.stack.push(a);
+    }
+
+    fn eval(&mut self) {
+        let a = self.stack[self.stack.len() - 1];
+        let mut stack = vec![a];
+        let mut instructions = vec![Instruction::Unwind];
+        std::mem::swap(&mut self.instructions, &mut instructions);
+        std::mem::swap(&mut self.stack, &mut stack);
+        self.dump.push(Frame {
+            stack,
+            instructions,
+        });
+    }
+
+    fn unwind(&mut self) {
+        let a = self.stack[self.stack.len() - 1];
+        match self.heap.at(a) {
+            HeapItem::App(a1, _a2) => {
+                self.stack.push(*a1);
+                self.instructions.push(Instruction::Unwind);
+            }
+            HeapItem::Global(n, c) => {
+                for i in 0..(*n as usize) {
+                    let ind = self.stack.len() - 1 - i;
+                    let app = self.stack[ind - 1];
+                    self.stack[ind] = self.heap.at_app_right(app);
+                }
+                self.instructions = c.clone();
+            }
+            HeapItem::Ind(i) => {
+                self.stack.pop();
+                self.stack.push(*i);
+                self.instructions.push(Instruction::Unwind);
+            }
+            HeapItem::I64(_) | HeapItem::Strng(_) => {
+                if let Some(frame) = self.dump.pop() {
+                    self.instructions = frame.instructions;
+                    self.stack = frame.stack;
+                } else {
+                    self.instructions = Vec::new();
+                    self.stack = Vec::new();
+                }
+                self.stack.push(a);
+            }
+        }
+    }
+
+    fn handle(&mut self, instr: Instruction) {
+        match instr {
+            Instruction::PushInt(n) => self.push_int(n),
+            Instruction::PushString(s) => self.push_string(s),
+            Instruction::PushGlobal(g) => self.push_global(g),
+            Instruction::Binary(op) => self.binary(op),
+            Instruction::Pop(n) => self.pop_n(n),
+            Instruction::Push(n) => self.push_n(n),
+            Instruction::Slide(n) => self.slide(n),
+            Instruction::MkApp => self.mkapp(),
+            Instruction::Update(n) => self.update(n),
+            Instruction::Unwind => self.unwind(),
+            Instruction::Eval => self.eval(),
+            Instruction::Alloc => self.alloc(),
         }
     }
 }

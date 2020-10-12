@@ -6,7 +6,7 @@ use peg;
 use crate::lexer::Token;
 
 /// Represents a binary operator we can use in arithmetic expressions
-#[derive(Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum BinOp {
     /// The + operator
     Add,
