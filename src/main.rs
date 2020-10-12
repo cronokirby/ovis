@@ -68,6 +68,10 @@ enum Stage {
     Simplify,
     /// The user wants us to stop after typing the simplified tree (and thus simplifying)
     Type,
+    /// The user wants to generate the intermediate GMachine
+    GMachine,
+    /// The user wants to interpret the generated code
+    Interpret,
 }
 
 impl TryFrom<&str> for Stage {
@@ -79,6 +83,8 @@ impl TryFrom<&str> for Stage {
             "parse" => Ok(Stage::Parse),
             "simplify" => Ok(Stage::Simplify),
             "type" => Ok(Stage::Type),
+            "gmachine" => Ok(Stage::GMachine),
+            "interpret" => Ok(Stage::Interpret),
             _ => Err(()),
         }
     }
@@ -125,7 +131,7 @@ fn real_main(args: Args) -> Result<(), CompileError> {
         println!("Parsed:\n\n{}", ast);
         return Ok(());
     }
-    let (simplified, dict) = simplifier::simplify(ast, &mut source);
+    let (simplified, dict, main) = simplifier::simplify(ast, &mut source);
     if args.stage <= Stage::Simplify {
         println!("Simplified:\n\n{}", WithDict::new(&simplified, &dict));
         return Ok(());
@@ -136,8 +142,22 @@ fn real_main(args: Args) -> Result<(), CompileError> {
         println!("Typed:\n\n{}", WithDict::new(&typed, &dict));
         return Ok(());
     }
-
-    Ok(())
+    let g_compiled = g_machine::compile(typed, main);
+    if args.stage <= Stage::GMachine {
+        println!("G-Machine:");
+        for g in g_compiled {
+            println!();
+            println!("{}", WithDict::new(&g, &dict))
+        }
+        return Ok(());
+    }
+    if args.stage == Stage::Interpret {
+        let value = g_machine::interpret(g_compiled, main);
+        println!("Interpreted:\n{:?}", value);
+        Ok(())
+    } else {
+        Ok(())
+    }
 }
 
 fn main() {

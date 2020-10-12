@@ -301,12 +301,15 @@ impl<'a> Simplifier<'a> {
     }
 }
 
+const MAIN: &'static str = "main";
+
 /// Simplify a parsed AST to a representation of an equivalent program.
 ///
 /// We want to simplify to remove so-called "Syntax Sugar", allowing us to
 /// work more directly with certain constructs
-pub fn simplify(parsed: parser::AST, source: &mut IdentSource) -> (AST, Dictionary) {
+pub fn simplify(parsed: parser::AST, source: &mut IdentSource) -> (AST, Dictionary, Ident) {
     let mut simplifier = Simplifier::new(source);
     let ast = simplifier.ast(parsed);
-    (ast, simplifier.interner.dictionary())
+    let main = simplifier.interner.ident(MAIN.to_string());
+    (ast, simplifier.interner.dictionary(), main)
 }

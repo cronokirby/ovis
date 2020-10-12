@@ -647,7 +647,7 @@ mod test {
             assert!(parsed.is_ok());
             let parsed = parsed.unwrap();
             let mut source = IdentSource::new();
-            let (simplified, _) = simplify(parsed, &mut source);
+            let (simplified, _, _) = simplify(parsed, &mut source);
             let typed = type_tree(simplified, &mut source);
             typed
         }};

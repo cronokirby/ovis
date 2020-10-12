@@ -1,5 +1,7 @@
-use crate::identifiers::Ident;
+use crate::interner::DisplayWithDict;
 use crate::parser::BinOp;
+use crate::simplifier::{Scheme, AST};
+use crate::{identifiers::Ident, interner::Dictionary};
 use std::collections::HashMap;
 use std::fmt;
 
@@ -34,10 +36,41 @@ enum Instruction {
     Alloc,
 }
 
+impl DisplayWithDict for Instruction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>, dict: &Dictionary) -> fmt::Result {
+        match self {
+            Instruction::PushInt(i) => write!(f, "int {}", i),
+            Instruction::PushString(s) => write!(f, "string {:?}", s),
+            Instruction::PushGlobal(g) => write!(f, "global {}", dict.get(*g).unwrap()),
+            Instruction::Push(n) => write!(f, "push {}", n),
+            Instruction::Update(n) => write!(f, "update {}", n),
+            Instruction::Slide(n) => write!(f, "slide {}", n),
+            Instruction::Pop(n) => write!(f, "pop {}", n),
+            Instruction::Binary(op) => write!(f, "binary {}", op),
+            Instruction::MkApp => write!(f, "mkapp"),
+            Instruction::Unwind => write!(f, "unwind"),
+            Instruction::Eval => write!(f, "eval"),
+            Instruction::Alloc => write!(f, "alloc"),
+        }
+    }
+}
+
 pub struct GlobalInfo {
     name: Ident,
     num_args: u64,
     instructions: Vec<Instruction>,
+}
+
+impl DisplayWithDict for GlobalInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>, dict: &Dictionary) -> fmt::Result {
+        writeln!(f, "{}({}):", dict.get(self.name).unwrap(), self.num_args)?;
+        for i in &self.instructions {
+            write!(f, "  ")?;
+            i.fmt(f, dict)?;
+            write!(f, "\n")?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -321,6 +354,7 @@ impl Machine {
 }
 
 /// Represents the kind of value that can result from interpretation
+#[derive(Debug)]
 pub enum Value {
     /// An integer value
     I64(i64),
@@ -340,4 +374,13 @@ pub fn interpret(globals: Vec<GlobalInfo>, entry: Ident) -> Option<Value> {
     }
     machine.execute();
     machine.top_value()
+}
+
+pub fn compile(ast: AST<Scheme>, main: Ident) -> Vec<GlobalInfo> {
+    let g: GlobalInfo = GlobalInfo {
+        name: main,
+        num_args: 0,
+        instructions: vec![Instruction::PushInt(42)],
+    };
+    vec![g]
 }
