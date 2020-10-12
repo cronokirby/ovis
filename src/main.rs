@@ -4,6 +4,7 @@ mod interner;
 mod lexer;
 mod parser;
 mod simplifier;
+mod stg;
 mod typer;
 
 use interner::WithDict;
