@@ -141,7 +141,6 @@ fn real_main(args: Args) -> Result<(), CompileError> {
     }
     let stg_ast = stg::compile(typed, &mut source);
     if args.stage <= Stage::STG {
-        println!("STG:\n");
         println!("{}", WithDict::new(&stg_ast, &dict));
         return Ok(());
     }

@@ -210,14 +210,13 @@ fn op_to_primitive(op: BinOp) -> Primitive {
 
 fn compile_expr(
     expr: SExpr<Scheme>,
-    top: bool,
     bindings: &mut Vec<Binding>,
     source: &mut IdentSource,
 ) -> Expr {
     match expr {
         SExpr::Lambda(n, _, e) => {
             let mut inner_bindings = Vec::new();
-            let r_e = compile_expr(*e, false, &mut inner_bindings, source);
+            let r_e = compile_expr(*e, &mut inner_bindings, source);
             let name = source.next();
             let expr = if inner_bindings.is_empty() {
                 r_e
@@ -239,14 +238,14 @@ fn compile_expr(
             for def in defs {
                 bindings.push(compile_def(def, source));
             }
-            compile_expr(*e, false, bindings, source)
+            compile_expr(*e, bindings, source)
         }
         SExpr::Name(n) => Expr::Atom(Atom::Name(n)),
         SExpr::NumberLitt(i) => Expr::Atom(Atom::Litt(Litt::IntLitt(i))),
         SExpr::StringLitt(s) => Expr::Atom(Atom::Litt(Litt::StringLitt(s))),
         SExpr::Binary(op, l, r) => {
-            let r_l = compile_expr(*l, false, bindings, source).as_atom().unwrap();
-            let r_r = compile_expr(*r, false, bindings, source).as_atom().unwrap();
+            let r_l = compile_expr(*l, bindings, source).as_atom().unwrap();
+            let r_r = compile_expr(*r, bindings, source).as_atom().unwrap();
             let prim = op_to_primitive(op);
             let binary = Expr::ApplyPrim(prim, vec![r_l, r_r]);
             let binary_name = source.next();
@@ -262,7 +261,7 @@ fn compile_expr(
             Expr::Atom(Atom::Name(binary_name))
         }
         SExpr::Negate(e) => {
-            let r_e = compile_expr(*e, false, bindings, source).as_atom().unwrap();
+            let r_e = compile_expr(*e, bindings, source).as_atom().unwrap();
             let expr = Expr::ApplyPrim(Primitive::Negate, vec![r_e]);
             let expr_name = source.next();
             bindings.push(Binding {
@@ -277,49 +276,77 @@ fn compile_expr(
             Expr::Atom(Atom::Name(expr_name))
         }
         SExpr::Apply(l, r) => {
-            let l = compile_expr(*l, false, bindings, source)
+            let l = compile_expr(*l, bindings, source)
                 .as_atom()
                 .and_then(|x| x.as_name())
                 .unwrap();
-            let r = compile_expr(*r, false, bindings, source).as_atom().unwrap();
+            let r = compile_expr(*r, bindings, source).as_atom().unwrap();
             let expr = Expr::ApplyName(l, vec![r]);
-            if top {
-                expr
+            let expr_name = source.next();
+            bindings.push(Binding {
+                name: expr_name,
+                lf: LambdaForm {
+                    free: vec![],
+                    updateable: Updateable::Yes,
+                    bound: vec![],
+                    expr,
+                },
+            });
+            Expr::Atom(Atom::Name(expr_name))
+        }
+    }
+}
+
+fn compile_top(expr: SExpr<Scheme>, source: &mut IdentSource) -> LambdaForm {
+    match expr {
+        SExpr::Lambda(n, _, e) => {
+            let mut inner_bindings = Vec::new();
+            let r_e = compile_expr(*e, &mut inner_bindings, source);
+            let name = source.next();
+            let expr = if inner_bindings.is_empty() {
+                r_e
             } else {
-                let expr_name = source.next();
-                bindings.push(Binding {
-                    name: expr_name,
-                    lf: LambdaForm {
-                        free: vec![],
-                        updateable: Updateable::Yes,
-                        bound: vec![],
-                        expr,
-                    },
-                });
-                Expr::Atom(Atom::Name(expr_name))
+                Expr::Let(inner_bindings, Box::new(r_e))
+            };
+            LambdaForm {
+                free: vec![],
+                updateable: Updateable::Yes,
+                bound: vec![n],
+                expr,
+            }
+        }
+        e => {
+            let mut bindings = Vec::new();
+            let compiled = match e {
+                SExpr::Apply(l, r) => {
+                    let l = compile_expr(*l, &mut bindings, source)
+                        .as_atom()
+                        .and_then(|x| x.as_name())
+                        .unwrap();
+                    let r = compile_expr(*r, &mut bindings, source).as_atom().unwrap();
+                    Expr::ApplyName(l, vec![r])
+                }
+                e => compile_expr(e, &mut bindings, source),
+            };
+            let expr = if bindings.is_empty() {
+                compiled
+            } else {
+                Expr::Let(bindings, Box::new(compiled))
+            };
+            LambdaForm {
+                free: vec![],
+                updateable: Updateable::Yes,
+                bound: vec![],
+                expr,
             }
         }
     }
 }
 
 fn compile_def(def: Definition<Scheme>, source: &mut IdentSource) -> Binding {
-    let mut bindings = Vec::new();
     let Definition::Val(name, _, _, e) = def;
-    let compiled = compile_expr(e, true, &mut bindings, source);
-    let expr = if bindings.is_empty() {
-        compiled
-    } else {
-        Expr::Let(bindings, Box::new(compiled))
-    };
-    Binding {
-        name,
-        lf: LambdaForm {
-            free: vec![],
-            updateable: Updateable::Yes,
-            bound: vec![],
-            expr,
-        },
-    }
+    let lf = compile_top(e, source);
+    Binding { name, lf }
 }
 
 pub fn compile(ast: SAST<Scheme>, source: &mut IdentSource) -> AST {
