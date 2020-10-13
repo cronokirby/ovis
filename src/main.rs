@@ -1,4 +1,3 @@
-mod g_machine;
 mod identifiers;
 mod interner;
 mod lexer;
@@ -69,10 +68,8 @@ enum Stage {
     Simplify,
     /// The user wants us to stop after typing the simplified tree (and thus simplifying)
     Type,
-    /// The user wants to generate the intermediate GMachine
-    GMachine,
-    /// The user wants to interpret the generated code
-    Interpret,
+    /// The user wants to generate the intermediate representation
+    STG,
 }
 
 impl TryFrom<&str> for Stage {
@@ -84,8 +81,7 @@ impl TryFrom<&str> for Stage {
             "parse" => Ok(Stage::Parse),
             "simplify" => Ok(Stage::Simplify),
             "type" => Ok(Stage::Type),
-            "gmachine" => Ok(Stage::GMachine),
-            "interpret" => Ok(Stage::Interpret),
+            "stg" => Ok(Stage::STG),
             _ => Err(()),
         }
     }
@@ -143,22 +139,13 @@ fn real_main(args: Args) -> Result<(), CompileError> {
         println!("Typed:\n\n{}", WithDict::new(&typed, &dict));
         return Ok(());
     }
-    let g_compiled = g_machine::compile(typed, &builtins);
-    if args.stage <= Stage::GMachine {
-        println!("G-Machine:");
-        for g in g_compiled {
-            println!();
-            println!("{}", WithDict::new(&g, &dict))
-        }
+    let stg_ast = stg::compile(typed, &mut source);
+    if args.stage <= Stage::STG {
+        println!("STG:\n");
+        println!("{}", WithDict::new(&stg_ast, &dict));
         return Ok(());
     }
-    if args.stage == Stage::Interpret {
-        let value = g_machine::interpret(g_compiled, builtins.ident(simplifier::Builtin::Main));
-        println!("Interpreted:\n{:?}", value);
-        Ok(())
-    } else {
-        Ok(())
-    }
+    Ok(())
 }
 
 fn main() {
